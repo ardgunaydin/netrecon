@@ -1,56 +1,104 @@
 import socket
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    as_completed
+)
 
 
-def scan_port(ip, port, timeout=0.5):
-    """
-    Scan a single TCP port.
-
-    Returns:
-        port number if open
-        None if closed/unreachable
-    """
-
+def scan_port(
+    ip,
+    port,
+    timeout=0.5
+):
     try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.settimeout(timeout)
+        with socket.socket(
+            socket.AF_INET,
+            socket.SOCK_STREAM
+        ) as sock:
 
-            result = sock.connect_ex((str(ip), port))
+            sock.settimeout(
+                timeout
+            )
+
+            result = sock.connect_ex(
+                (
+                    str(ip),
+                    port
+                )
+            )
 
             if result == 0:
                 return port
 
-    except (socket.timeout, socket.error):
+    except (
+        socket.timeout,
+        socket.error,
+        OSError
+    ):
         pass
 
     return None
 
 
-def scan_ports(ip, start_port=1, end_port=1024, threads=100):
-    """
-    Scan a TCP port range on a single host.
-    """
-
+def scan_ports(
+    ip,
+    start_port=1,
+    end_port=1024,
+    threads=100,
+    timeout=0.5
+):
     open_ports = []
 
-    print(f"\n[*] Scanning {ip} ports {start_port}-{end_port}...")
+    print(
+        f"\n[*] Scanning {ip} "
+        f"ports {start_port}-{end_port}..."
+    )
 
-    with ThreadPoolExecutor(max_workers=threads) as executor:
+    with ThreadPoolExecutor(
+        max_workers=threads
+    ) as executor:
+
         futures = {
-            executor.submit(scan_port, ip, port): port
-            for port in range(start_port, end_port + 1)
+            executor.submit(
+                scan_port,
+                ip,
+                port,
+                timeout
+            ): port
+            for port in range(
+                start_port,
+                end_port + 1
+            )
         }
 
-        for future in as_completed(futures):
+        for future in as_completed(
+            futures
+        ):
+            port = futures[
+                future
+            ]
+
             try:
                 result = future.result()
 
                 if result is not None:
-                    open_ports.append(result)
-                    print(f"[+] {ip}:{result} OPEN")
+                    open_ports.append(
+                        result
+                    )
+
+                    print(
+                        f"[+] "
+                        f"{ip}:{result} "
+                        f"OPEN"
+                    )
 
             except Exception as error:
-                port = futures[future]
-                print(f"[!] Error scanning {ip}:{port}: {error}")
+                print(
+                    f"[!] Error scanning "
+                    f"{ip}:{port}: "
+                    f"{error}"
+                )
 
-    return sorted(open_ports)
+    return sorted(
+        open_ports
+    )

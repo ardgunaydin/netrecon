@@ -14,7 +14,7 @@ from utils.output import (
 )
 
 
-VERSION = "0.7.0"
+VERSION = "0.8.0"
 
 
 def validate_network(network):
@@ -83,7 +83,8 @@ def main():
             "python netrecon.py "
             "-t 127.0.0.1/32 "
             "-p 1-1000 "
-            "--resolve-hostnames"
+            "--resolve-hostnames "
+            "--timeout 0.5"
         )
     )
 
@@ -114,6 +115,16 @@ def main():
         help=(
             "Number of worker threads "
             "(default: 50)"
+        )
+    )
+
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=0.5,
+        help=(
+            "TCP connection timeout in seconds "
+            "(default: 0.5)"
         )
     )
 
@@ -184,6 +195,12 @@ def main():
         )
         return
 
+    if args.timeout <= 0:
+        print(
+            "[!] Timeout must be greater than 0."
+        )
+        return
+
     start_port, end_port = port_range
 
     # ==================================================
@@ -216,6 +233,11 @@ def main():
     )
 
     print(
+        f"[+] Timeout           : "
+        f"{args.timeout} seconds"
+    )
+
+    print(
         f"[+] Host discovery    : "
         f"{'OFF' if args.skip_discovery else 'ON'}"
     )
@@ -233,6 +255,7 @@ def main():
         f"Target={network}, "
         f"Ports={start_port}-{end_port}, "
         f"Threads={args.threads}, "
+        f"Timeout={args.timeout}, "
         f"SkipDiscovery={args.skip_discovery}, "
         f"ResolveHostnames={args.resolve_hostnames}"
     )
@@ -253,6 +276,7 @@ def main():
             for host in network.hosts()
         ]
 
+        # Handles /32 targets.
         if not live_hosts:
             live_hosts = [
                 str(network.network_address)
@@ -286,7 +310,8 @@ def main():
             host,
             start_port=start_port,
             end_port=end_port,
-            threads=args.threads
+            threads=args.threads,
+            timeout=args.timeout
         )
 
         formatted_ports = []
