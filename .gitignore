@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+
+.vscode/
+.idea/
+
+.env
+
+results/*
+!results/.gitkeep
+
+.coverage
+.pytest_cache/
+
+.DS_Store
+Thumbs.db
