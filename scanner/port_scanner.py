@@ -42,17 +42,45 @@ def scan_port(
 
 def scan_ports(
     ip,
-    start_port=1,
-    end_port=1024,
+    start_port=None,
+    end_port=None,
+    ports=None,
     threads=100,
     timeout=0.5
 ):
     open_ports = []
 
-    print(
-        f"\n[*] Scanning {ip} "
-        f"ports {start_port}-{end_port}..."
-    )
+    if ports is not None:
+        target_ports = sorted(
+            set(ports)
+        )
+
+        print(
+            f"\n[*] Scanning {ip} "
+            f"on {len(target_ports)} selected ports..."
+        )
+
+    else:
+        if (
+            start_port is None
+            or end_port is None
+        ):
+            raise ValueError(
+                "start_port and end_port "
+                "are required when ports is not provided."
+            )
+
+        target_ports = list(
+            range(
+                start_port,
+                end_port + 1
+            )
+        )
+
+        print(
+            f"\n[*] Scanning {ip} "
+            f"ports {start_port}-{end_port}..."
+        )
 
     with ThreadPoolExecutor(
         max_workers=threads
@@ -65,10 +93,7 @@ def scan_ports(
                 port,
                 timeout
             ): port
-            for port in range(
-                start_port,
-                end_port + 1
-            )
+            for port in target_ports
         }
 
         for future in as_completed(

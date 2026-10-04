@@ -21,7 +21,10 @@ class TestPortScanner(unittest.TestCase):
 
             server.listen(1)
 
-            port = server.getsockname()[1]
+            port = (
+                server
+                .getsockname()[1]
+            )
 
             result = scan_port(
                 "127.0.0.1",
@@ -46,7 +49,10 @@ class TestPortScanner(unittest.TestCase):
 
             server.listen(1)
 
-            port = server.getsockname()[1]
+            port = (
+                server
+                .getsockname()[1]
+            )
 
             results = scan_ports(
                 "127.0.0.1",
@@ -61,6 +67,37 @@ class TestPortScanner(unittest.TestCase):
                 results
             )
 
+    def test_custom_port_list(self):
+        with socket.socket(
+            socket.AF_INET,
+            socket.SOCK_STREAM
+        ) as server:
+
+            server.bind(
+                ("127.0.0.1", 0)
+            )
+
+            server.listen(1)
+
+            open_port = (
+                server
+                .getsockname()[1]
+            )
+
+            results = scan_ports(
+                "127.0.0.1",
+                ports=[
+                    open_port
+                ],
+                threads=1,
+                timeout=1
+            )
+
+            self.assertIn(
+                open_port,
+                results
+            )
+
     def test_closed_port_returns_none(self):
         with socket.socket(
             socket.AF_INET,
@@ -71,7 +108,10 @@ class TestPortScanner(unittest.TestCase):
                 ("127.0.0.1", 0)
             )
 
-            port = temp_socket.getsockname()[1]
+            port = (
+                temp_socket
+                .getsockname()[1]
+            )
 
         result = scan_port(
             "127.0.0.1",

@@ -5,6 +5,7 @@ import time
 
 from scanner.host_scanner import discover_hosts
 from scanner.port_scanner import scan_ports
+from scanner.port_presets import get_top_ports
 from scanner.service_detector import detect_service_version
 
 from utils.logger import setup_logger
@@ -14,7 +15,7 @@ from utils.output import (
 )
 
 
-VERSION = "0.8.0"
+VERSION = "0.9.0"
 
 
 def validate_network(network):
@@ -25,7 +26,9 @@ def validate_network(network):
         )
 
     except ValueError:
-        print(f"[!] Invalid network: {network}")
+        print(
+            f"[!] Invalid network: {network}"
+        )
         return None
 
 
@@ -36,16 +39,23 @@ def parse_port_range(port_range):
             port_range.split("-")
         )
 
-        if not (1 <= start_port <= 65535):
+        if not (
+            1 <= start_port <= 65535
+        ):
             raise ValueError
 
-        if not (1 <= end_port <= 65535):
+        if not (
+            1 <= end_port <= 65535
+        ):
             raise ValueError
 
         if start_port > end_port:
             raise ValueError
 
-        return start_port, end_port
+        return (
+            start_port,
+            end_port
+        )
 
     except ValueError:
         print(
@@ -57,7 +67,10 @@ def parse_port_range(port_range):
 
 def resolve_hostname(ip):
     try:
-        hostname, _, _ = socket.gethostbyaddr(ip)
+        hostname, _, _ = (
+            socket.gethostbyaddr(ip)
+        )
+
         return hostname
 
     except (
@@ -79,12 +92,14 @@ def main():
             "service detection and banner grabbing."
         ),
         epilog=(
-            "Example: "
-            "python netrecon.py "
-            "-t 127.0.0.1/32 "
-            "-p 1-1000 "
-            "--resolve-hostnames "
-            "--timeout 0.5"
+            "Examples:\n"
+            "  python netrecon.py "
+            "-t 127.0.0.1/32 -p 1-1000\n"
+            "  python netrecon.py "
+            "-t 127.0.0.1/32 --top-ports 20"
+        ),
+        formatter_class=(
+            argparse.RawDescriptionHelpFormatter
         )
     )
 
@@ -98,13 +113,30 @@ def main():
         )
     )
 
-    parser.add_argument(
+    port_group = (
+        parser.add_mutually_exclusive_group()
+    )
+
+    port_group.add_argument(
         "-p",
         "--ports",
-        default="1-1024",
         help=(
             "TCP port range "
-            "(default: 1-1024)"
+            "(example: 1-1000)"
+        )
+    )
+
+    port_group.add_argument(
+        "--top-ports",
+        type=int,
+        choices=[
+            10,
+            20,
+            50
+        ],
+        help=(
+            "Scan a preset of common TCP ports "
+            "(10, 20 or 50)"
         )
     )
 
@@ -182,13 +214,6 @@ def main():
     if network is None:
         return
 
-    port_range = parse_port_range(
-        args.ports
-    )
-
-    if port_range is None:
-        return
-
     if args.threads < 1:
         print(
             "[!] Threads must be greater than 0."
@@ -201,7 +226,42 @@ def main():
         )
         return
 
-    start_port, end_port = port_range
+    # ==================================================
+    # PORT MODE
+    # ==================================================
+
+    selected_ports = None
+    start_port = None
+    end_port = None
+
+    if args.top_ports:
+        selected_ports = get_top_ports(
+            args.top_ports
+        )
+
+        scan_mode = "top_ports"
+
+        port_description = (
+            f"Top {args.top_ports} common ports"
+        )
+
+    else:
+        port_range = parse_port_range(
+            args.ports or "1-1024"
+        )
+
+        if port_range is None:
+            return
+
+        start_port, end_port = (
+            port_range
+        )
+
+        scan_mode = "range"
+
+        port_description = (
+            f"{start_port}-{end_port}"
+        )
 
     # ==================================================
     # START INFORMATION
@@ -209,7 +269,10 @@ def main():
 
     print()
     print("=" * 78)
-    print("                              NETRECON")
+    print(
+        "                              "
+        "NETRECON"
+    )
     print("=" * 78)
 
     print(
@@ -224,7 +287,7 @@ def main():
 
     print(
         f"[+] Ports             : "
-        f"{start_port}-{end_port}"
+        f"{port_description}"
     )
 
     print(
@@ -253,11 +316,13 @@ def main():
         f"Scan started - "
         f"Version={VERSION}, "
         f"Target={network}, "
-        f"Ports={start_port}-{end_port}, "
+        f"Ports={port_description}, "
         f"Threads={args.threads}, "
         f"Timeout={args.timeout}, "
-        f"SkipDiscovery={args.skip_discovery}, "
-        f"ResolveHostnames={args.resolve_hostnames}"
+        f"SkipDiscovery="
+        f"{args.skip_discovery}, "
+        f"ResolveHostnames="
+        f"{args.resolve_hostnames}"
     )
 
     start_time = time.time()
@@ -276,10 +341,11 @@ def main():
             for host in network.hosts()
         ]
 
-        # Handles /32 targets.
         if not live_hosts:
             live_hosts = [
-                str(network.network_address)
+                str(
+                    network.network_address
+                )
             ]
 
     else:
@@ -310,6 +376,7 @@ def main():
             host,
             start_port=start_port,
             end_port=end_port,
+            ports=selected_ports,
             threads=args.threads,
             timeout=args.timeout
         )
@@ -321,17 +388,27 @@ def main():
         # ==============================================
 
         for port in open_ports:
-            service_info = detect_service_version(
-                host,
-                port
+            service_info = (
+                detect_service_version(
+                    host,
+                    port
+                )
             )
 
             port_info = {
                 "port": port,
                 "protocol": "tcp",
                 "state": "open",
-                "service": service_info["service"],
-                "banner": service_info["banner"]
+                "service": (
+                    service_info[
+                        "service"
+                    ]
+                ),
+                "banner": (
+                    service_info[
+                        "banner"
+                    ]
+                )
             }
 
             formatted_ports.append(
@@ -342,7 +419,8 @@ def main():
                 f"{host}:{port} "
                 f"{service_info['service']} "
                 f"OPEN "
-                f"Banner={service_info['banner']}"
+                f"Banner="
+                f"{service_info['banner']}"
             )
 
         scan_results[host] = {
@@ -374,7 +452,9 @@ def main():
         )
 
     else:
-        for host, host_info in scan_results.items():
+        for host, host_info in (
+            scan_results.items()
+        ):
             hostname = host_info[
                 "hostname"
             ]
@@ -415,7 +495,9 @@ def main():
 
                 for port_info in ports:
                     banner = (
-                        port_info["banner"]
+                        port_info[
+                            "banner"
+                        ]
                         or "-"
                     )
 
@@ -437,7 +519,9 @@ def main():
 
     total_open_ports = sum(
         len(
-            host_info["ports"]
+            host_info[
+                "ports"
+            ]
         )
         for host_info
         in scan_results.values()
@@ -456,6 +540,11 @@ def main():
     print(
         f"Open ports        : "
         f"{total_open_ports}"
+    )
+
+    print(
+        f"Scan mode         : "
+        f"{port_description}"
     )
 
     print(
@@ -478,7 +567,10 @@ def main():
                 end_port=end_port,
                 threads=args.threads,
                 scan_results=scan_results,
-                duration=duration
+                duration=duration,
+                scan_mode=scan_mode,
+                selected_ports=selected_ports,
+                timeout=args.timeout
             )
 
         except OSError as error:

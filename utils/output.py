@@ -7,13 +7,18 @@ from datetime import datetime
 def save_json_results(
     filename,
     target,
-    start_port,
-    end_port,
-    threads,
-    scan_results,
-    duration
+    start_port=None,
+    end_port=None,
+    threads=50,
+    scan_results=None,
+    duration=0,
+    scan_mode="range",
+    selected_ports=None,
+    timeout=None
 ):
-    directory = os.path.dirname(filename)
+    directory = os.path.dirname(
+        filename
+    )
 
     if directory:
         os.makedirs(
@@ -21,29 +26,63 @@ def save_json_results(
             exist_ok=True
         )
 
+    scan_info = {
+        "target": str(target),
+        "scan_mode": scan_mode,
+        "threads": threads,
+        "duration_seconds": round(
+            duration,
+            2
+        ),
+        "timestamp": (
+            datetime.now()
+            .astimezone()
+            .isoformat()
+        )
+    }
+
+    if timeout is not None:
+        scan_info[
+            "timeout_seconds"
+        ] = timeout
+
+    if scan_mode == "top_ports":
+        scan_info[
+            "selected_ports"
+        ] = selected_ports or []
+
+    else:
+        scan_info[
+            "port_range"
+        ] = (
+            f"{start_port}-{end_port}"
+        )
+
     data = {
-        "scan_info": {
-            "target": str(target),
-            "port_range": f"{start_port}-{end_port}",
-            "threads": threads,
-            "duration_seconds": round(duration, 2),
-            "timestamp": (
-                datetime.now()
-                .astimezone()
-                .isoformat()
-            )
-        },
+        "scan_info": scan_info,
         "hosts": []
     }
 
-    for host, host_info in scan_results.items():
+    for host, host_info in (
+        scan_results.items()
+    ):
         host_data = {
             "ip": host,
-            "hostname": host_info["hostname"],
-            "open_ports": host_info["ports"]
+            "hostname": (
+                host_info[
+                    "hostname"
+                ]
+            ),
+            "open_ports": (
+                host_info[
+                    "ports"
+                ]
+            )
         }
 
-        data["hosts"].append(host_data)
+        data["hosts"].append(
+            host_data
+        )
 
     with open(
         filename,
@@ -58,7 +97,8 @@ def save_json_results(
 
     print()
     print(
-        f"[+] JSON results saved to: {filename}"
+        f"[+] JSON results "
+        f"saved to: {filename}"
     )
 
 
@@ -66,7 +106,9 @@ def save_csv_results(
     filename,
     scan_results
 ):
-    directory = os.path.dirname(filename)
+    directory = os.path.dirname(
+        filename
+    )
 
     if directory:
         os.makedirs(
@@ -81,7 +123,9 @@ def save_csv_results(
         encoding="utf-8"
     ) as file:
 
-        writer = csv.writer(file)
+        writer = csv.writer(
+            file
+        )
 
         writer.writerow([
             "ip",
@@ -93,13 +137,19 @@ def save_csv_results(
             "banner"
         ])
 
-        for host, host_info in scan_results.items():
+        for host, host_info in (
+            scan_results.items()
+        ):
             hostname = (
-                host_info["hostname"]
+                host_info[
+                    "hostname"
+                ]
                 or ""
             )
 
-            ports = host_info["ports"]
+            ports = host_info[
+                "ports"
+            ]
 
             if not ports:
                 writer.writerow([
@@ -122,10 +172,12 @@ def save_csv_results(
                     port_info["protocol"],
                     port_info["state"],
                     port_info["service"],
-                    port_info["banner"] or ""
+                    port_info["banner"]
+                    or ""
                 ])
 
     print()
     print(
-        f"[+] CSV results saved to: {filename}"
+        f"[+] CSV results "
+        f"saved to: {filename}"
     )
