@@ -5,7 +5,8 @@ import time
 
 from scanner.host_scanner import discover_hosts
 from scanner.port_scanner import scan_ports
-from scanner.port_presets import get_top_ports
+from scanner.udp_scanner import scan_udp_ports
+from scanner.port_presets import get_top_ports, get_top_udp_ports
 from scanner.service_detector import detect_service_version
 
 from utils.logger import setup_logger
@@ -15,7 +16,7 @@ from utils.output import (
 )
 
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 
 def validate_network(network):
@@ -88,7 +89,7 @@ def main():
         prog="NetRecon",
         description=(
             "NetRecon - Lightweight Network Scanner "
-            "for host discovery, TCP port scanning, "
+            "for host discovery, TCP/UDP port scanning, "
             "service detection and banner grabbing."
         ),
         epilog=(
@@ -121,7 +122,7 @@ def main():
         "-p",
         "--ports",
         help=(
-            "TCP port range "
+            "TCP/UDP port range "
             "(example: 1-1000)"
         )
     )
@@ -135,7 +136,7 @@ def main():
             50
         ],
         help=(
-            "Scan a preset of common TCP ports "
+            "Scan a preset of common TCP or UDP ports "
             "(10, 20 or 50)"
         )
     )
@@ -155,7 +156,7 @@ def main():
         type=float,
         default=0.5,
         help=(
-            "TCP connection timeout in seconds "
+            "Per-port scan timeout in seconds "
             "(default: 0.5)"
         )
     )
@@ -184,6 +185,12 @@ def main():
             "Skip ping-based host discovery "
             "and scan target hosts directly"
         )
+    )
+
+    parser.add_argument(
+        "--udp",
+        action="store_true",
+        help="Enable UDP port scanning instead of TCP"
     )
 
     parser.add_argument(
@@ -235,9 +242,11 @@ def main():
     end_port = None
 
     if args.top_ports:
-        selected_ports = get_top_ports(
-            args.top_ports
-        )
+        selected_ports = (
+                get_top_udp_ports(args.top_ports)
+                if args.udp
+                else get_top_ports(args.top_ports)
+)
 
         scan_mode = "top_ports"
 
@@ -278,6 +287,11 @@ def main():
     print(
         f"[+] Version           : "
         f"{VERSION}"
+    )
+
+    print(
+        f"[+] Protocol          : "
+        f"{'UDP' if args.udp else 'TCP'}"
     )
 
     print(
@@ -372,56 +386,84 @@ def main():
                 host
             )
 
-        open_ports = scan_ports(
-            host,
-            start_port=start_port,
-            end_port=end_port,
-            ports=selected_ports,
-            threads=args.threads,
-            timeout=args.timeout
-        )
-
         formatted_ports = []
 
         # ==============================================
-        # SERVICE + BANNER DETECTION
+        # UDP PORT SCANNING
         # ==============================================
 
-        for port in open_ports:
-            service_info = (
-                detect_service_version(
-                    host,
-                    port
+        if args.udp:
+            udp_results = scan_udp_ports(
+                host,
+                start_port=start_port,
+                end_port=end_port,
+                ports=selected_ports,
+                threads=args.threads,
+                timeout=args.timeout
+            )
+
+            for result in udp_results:
+                if result["state"] == "closed":
+                    continue
+
+                port = result["port"]
+
+                try:
+                    service = socket.getservbyport(
+                        port, "udp"
+                    ).upper()
+                except OSError:
+                    service = "UNKNOWN"
+
+                port_info = {
+                    "port": port,
+                    "protocol": "udp",
+                    "state": result["state"],
+                    "service": service,
+                    "banner": None
+                }
+
+                formatted_ports.append(port_info)
+
+                logger.info(
+                    f"{host}:{port}/udp "
+                    f"{service} {result['state']}"
                 )
+
+        # ==============================================
+        # TCP PORT SCANNING
+        # ==============================================
+
+        else:
+            open_ports = scan_ports(
+                host,
+                start_port=start_port,
+                end_port=end_port,
+                ports=selected_ports,
+                threads=args.threads,
+                timeout=args.timeout
             )
 
-            port_info = {
-                "port": port,
-                "protocol": "tcp",
-                "state": "open",
-                "service": (
-                    service_info[
-                        "service"
-                    ]
-                ),
-                "banner": (
-                    service_info[
-                        "banner"
-                    ]
+            for port in open_ports:
+                service_info = detect_service_version(
+                    host, port
                 )
-            }
 
-            formatted_ports.append(
-                port_info
-            )
+                port_info = {
+                    "port": port,
+                    "protocol": "tcp",
+                    "state": "open",
+                    "service": service_info["service"],
+                    "banner": service_info["banner"]
+                }
 
-            logger.info(
-                f"{host}:{port} "
-                f"{service_info['service']} "
-                f"OPEN "
-                f"Banner="
-                f"{service_info['banner']}"
-            )
+                formatted_ports.append(port_info)
+
+                logger.info(
+                    f"{host}:{port}/tcp "
+                    f"{service_info['service']} OPEN "
+                    f"Banner={service_info['banner']}"
+                )
 
         scan_results[host] = {
             "hostname": hostname,
@@ -479,19 +521,21 @@ def main():
             print("-" * 78)
 
             if ports:
+                
                 print(
                     f"{'PORT':<12}"
-                    f"{'STATE':<12}"
+                    f"{'STATE':<16}"
                     f"{'SERVICE':<18}"
-                    f"BANNER"
+                    "BANNER"
                 )
 
                 print(
                     f"{'-' * 8:<12}"
-                    f"{'-' * 8:<12}"
+                    f"{'-' * 14:<16}"
                     f"{'-' * 14:<18}"
                     f"{'-' * 30}"
                 )
+
 
                 for port_info in ports:
                     banner = (
@@ -501,9 +545,17 @@ def main():
                         or "-"
                     )
 
+                    # Show the actual port protocol and state
+                    port_label = (
+                        f"{port_info['port']}/"
+                        f"{port_info['protocol']}"
+                    )
+
+                    port_state = port_info["state"].upper()
+
                     print(
-                        f"{str(port_info['port']) + '/tcp':<12}"
-                        f"{'OPEN':<12}"
+                        f"{port_label:<12}"
+                        f"{port_state:<16}"
                         f"{port_info['service']:<18}"
                         f"{banner}"
                     )
@@ -518,13 +570,17 @@ def main():
     # ==================================================
 
     total_open_ports = sum(
-        len(
-            host_info[
-                "ports"
-            ]
-        )
-        for host_info
-        in scan_results.values()
+        1
+        for host_info in scan_results.values()
+        for port_info in host_info["ports"]
+        if port_info["state"] == "open"
+    )
+
+    total_uncertain_ports = sum(
+        1
+        for host_info in scan_results.values()
+        for port_info in host_info["ports"]
+        if port_info["state"] == "open|filtered"
     )
 
     print()
@@ -540,6 +596,11 @@ def main():
     print(
         f"Open ports        : "
         f"{total_open_ports}"
+    )
+
+    print(
+        f"Open|Filtered ports: "
+        f"{total_uncertain_ports}"
     )
 
     print(

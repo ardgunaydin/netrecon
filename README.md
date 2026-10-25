@@ -1,735 +1,282 @@
-# NetRecon
+NetRecon is a lightweight, Python-based network reconnaissance tool for educational use, home labs, CTF environments, and authorized network security assessments.
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
-[![Tests](https://github.com/ardgunaydin/netrecon/actions/workflows/tests.yml/badge.svg)](https://github.com/ardgunaydin/netrecon/actions/workflows/tests.yml)
-[![Version](https://img.shields.io/badge/version-1.0.0-green)](https://github.com/ardgunaydin/netrecon)
-[![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
+It combines ping-based host discovery, multithreaded TCP and UDP port scanning, common-service identification, TCP banner grabbing, optional reverse DNS resolution, and JSON/CSV reporting in a simple command-line interface.
+Authorization required: Only scan systems and networks you own or have explicit permission to assess.
 
-**NetRecon** is a lightweight Python-based network reconnaissance tool designed for educational purposes, security labs, CTF environments, and authorized network testing.
+Release status: This README describes the v1.1.0 development work. The published stable release is v1.0.0, while the development branch reports v1.1.0. The new release has not yet been published.
 
-It provides host discovery, multithreaded TCP port scanning, service identification, banner grabbing, hostname resolution, configurable timeouts, common-port presets, logging, and structured JSON/CSV output through a simple command-line interface.
-
-> NetRecon is intended only for systems and networks you own or have explicit permission to test.
-
----
-
-## Features
-
-- IPv4 and CIDR target support
-- Ping-based host discovery
-- Multithreaded host discovery
-- Multithreaded TCP port scanning
-- Custom TCP port ranges
-- Common-port scan presets
-  - Top 10
-  - Top 20
-  - Top 50
-- Configurable TCP connection timeout
-- Common service identification
-- Basic banner grabbing
-- HTTP banner detection
-- HTTPS banner detection
-- Reverse DNS hostname resolution
-- Skip host-discovery mode
-- JSON result export
-- CSV result export
+Features
+- IPv4 address and CIDR network targets
+- Ping-based, multithreaded host discovery
+- Multithreaded TCP connect scanning (default)
+- Multithreaded UDP scanning (--udp, new in v1.1.0)
+- Custom port ranges (-p START-END)
+- Separate curated TCP and UDP presets (--top-ports 10, 20, or 50)
+- Configurable worker threads and per-port timeouts
+- Common-service identification by port number
+- Basic TCP service detection and banner grabbing, including HTTP/HTTPS
+- Optional reverse DNS hostname resolution
+- Optional host-discovery bypass (--skip-discovery)
+- Structured JSON and CSV exports
 - File-based scan logging
-- Configurable thread count
-- CLI help and version information
-- Automated unit tests
-- Multi-version GitHub Actions CI
-- Modular project architecture
-
----
-
-## Example
-
-Run a common-port reconnaissance scan:
-
-```bash
-python netrecon.py -t 127.0.0.1/32 --top-ports 20 --timeout 0.2 --resolve-hostnames
-```
-
-Example output:
-
-```text
-==============================================================================
-                              NETRECON
-==============================================================================
-[+] Version           : 1.0.0
-[+] Target            : 127.0.0.1/32
-[+] Ports             : Top 20 common ports
-[+] Threads           : 50
-[+] Timeout           : 0.2 seconds
-[+] Host discovery    : ON
-[+] Hostname resolving: ON
-
-[*] Starting host discovery with 50 threads...
-
-[+] 127.0.0.1 ONLINE
-
-[*] Scanning 127.0.0.1 on 20 selected ports...
-[+] 127.0.0.1:135 OPEN
-[+] 127.0.0.1:445 OPEN
-[+] 127.0.0.1:8080 OPEN
-
-==============================================================================
-SCAN RESULTS
-==============================================================================
-
-Host: 127.0.0.1 (YOUR-HOSTNAME)
-------------------------------------------------------------------------------
-PORT        STATE       SERVICE           BANNER
---------    --------    --------------    ------------------------------
-135/tcp     OPEN        MSRPC             -
-445/tcp     OPEN        SMB               -
-8080/tcp    OPEN        HTTP-ALT          SimpleHTTP/0.6 Python/3.x
-
-==============================================================================
-SCAN SUMMARY
-==============================================================================
-Hosts scanned     : 1
-Open ports        : 3
-Scan mode         : Top 20 common ports
-Scan duration     : 4.35 seconds
-==============================================================================
-```
-
----
-
-## Installation
-
-Clone the repository:
-
-```bash
+- Automated unit and CLI integration tests
+- GitHub Actions CI configured for multiple Python versions
+- Modular, standard-library-only Python architecture
+Current limitations: UDP uses a generic one-byte probe, not protocol-specific payloads or comprehensive UDP fingerprinting. TCP banner grabbing is not available in UDP mode. Only one of TCP or UDP is scanned per invocation; IPv6 scanning is not implemented.
+Installation
+Requires Python 3.10 or newer and Git (for cloning).
 git clone https://github.com/ardgunaydin/netrecon.git
 cd netrecon
-```
-
-Check your Python version:
-
-```bash
 python --version
-```
+No third-party runtime packages are required. NetRecon uses Python's standard library.
+The GitHub default branch may still reflect v1.0.0 until the v1.1.0 development branch is merged.
 
-Recommended:
-
-```text
-Python 3.10+
-```
-
-NetRecon currently relies only on Python standard-library modules, so no third-party runtime dependencies are required.
-
----
-
-## Usage
-
-### Basic Scan
-
-```bash
-python netrecon.py -t 127.0.0.1/32
-```
-
-If no port configuration is provided, NetRecon scans:
-
-```text
-1-1024
-```
-
----
-
-### Custom Port Range
-
-```bash
-python netrecon.py -t 127.0.0.1/32 -p 1-1000
-```
-
-Another example:
-
-```bash
-python netrecon.py -t 127.0.0.1/32 -p 8000-9000
-```
-
----
-
-## Common Port Presets
-
-NetRecon includes curated common TCP port presets for faster reconnaissance.
-
-### Top 10 Ports
-
-```bash
-python netrecon.py -t 127.0.0.1/32 --top-ports 10
-```
-
-### Top 20 Ports
-
-```bash
-python netrecon.py -t 127.0.0.1/32 --top-ports 20
-```
-
-### Top 50 Ports
-
-```bash
-python netrecon.py -t 127.0.0.1/32 --top-ports 50
-```
-
-The preset list is a curated collection of common TCP services and is not intended to reproduce Nmap's frequency database.
-
-The `-p` and `--top-ports` options are mutually exclusive.
-
-For example, this is valid:
-
-```bash
-python netrecon.py -t 127.0.0.1/32 -p 1-1000
-```
-
-And this is also valid:
-
-```bash
-python netrecon.py -t 127.0.0.1/32 --top-ports 20
-```
-
----
-
-## Configure Connection Timeout
-
-The TCP connection timeout can be changed with:
-
-```bash
-python netrecon.py -t 127.0.0.1/32 --top-ports 20 --timeout 0.2
-```
-
-Default:
-
-```text
-0.5 seconds
-```
-
-Lower timeout values may make scans faster, while higher values may be useful on slower networks.
-
----
-
-## Configure Thread Count
-
-NetRecon uses multithreading to improve scan performance.
-
-Default:
-
-```text
-50 threads
-```
-
-Custom value:
-
-```bash
-python netrecon.py -t 127.0.0.1/32 -p 1-1000 --threads 100
-```
-
----
-
-## Hostname Resolution
-
-Enable reverse DNS resolution with:
-
-```bash
-python netrecon.py -t 127.0.0.1/32 --top-ports 20 --resolve-hostnames
-```
-
-Example:
-
-```text
-Host: 127.0.0.1 (MY-LAPTOP)
-```
-
-If no hostname can be resolved, NetRecon continues using the IP address.
-
----
-
-## Skip Host Discovery
-
-By default, NetRecon performs ping-based host discovery before TCP scanning.
-
-To skip this step:
-
-```bash
+Quick Start
+# Default TCP scan: ports 1-1024
 python netrecon.py -t 127.0.0.1/32 --skip-discovery
-```
 
-This can be useful when a target does not respond to ICMP echo requests but may still expose TCP services.
+# Selected TCP ports from the curated preset
+python netrecon.py -t 127.0.0.1/32 --top-ports 20 --skip-discovery
 
----
+# UDP scan: a single local port
+python netrecon.py -t 127.0.0.1/32 --udp -p 123-123 --skip-discovery
 
-## Service Detection
+# UDP scan: curated top 10 ports
+python netrecon.py -t 127.0.0.1/32 --udp --top-ports 10 --skip-discovery
+127.0.0.1/32 targets your own computer. Use other targets only when authorized. If --skip-discovery is omitted, NetRecon first attempts ping-based host discovery.
+TCP Port Scanning
+TCP is the default mode and uses connection attempts to identify ports that accept a TCP connection.
+# Scan TCP ports 1-1000
+python netrecon.py -t 127.0.0.1/32 -p 1-1000 --skip-discovery
 
-NetRecon maps common TCP ports to known services.
+# Scan 10 selected TCP ports
+python netrecon.py -t 127.0.0.1/32 --top-ports 10 --skip-discovery
+For detected open TCP ports, NetRecon attempts to identify common services and retrieve banners. HTTP/HTTPS probes are supported on selected known web-service ports; other TCP services may expose a generic banner.
 
-Examples:
+Port-based service names are best-effort labels, not proof of a specific application or version.
+UDP Port Scanning (v1.1.0)
+Enable UDP mode with --udp:
+# Scan a UDP port range
+python netrecon.py -t 127.0.0.1/32 --udp -p 100-150 --skip-discovery
 
-```text
-21     FTP
-22     SSH
-25     SMTP
-53     DNS
-80     HTTP
-135    MSRPC
-139    NETBIOS
-443    HTTPS
-445    SMB
-1433   MSSQL
-3306   MYSQL
-3389   RDP
-5432   POSTGRESQL
-5900   VNC
-6379   REDIS
-8080   HTTP-ALT
-8443   HTTPS-ALT
-```
+# Scan curated UDP ports
+python netrecon.py -t 127.0.0.1/32 --udp --top-ports 10 --skip-discovery
+NetRecon sends a one-byte UDP datagram and waits for a response or a socket error. Because UDP is connectionless, the result can be ambiguous.
+State	Meaning
+open	A UDP response was received.
+closed	The operating system reported a connection-refused / port-unreachable condition.
+open|filtered	No response was received before the timeout; the port might be open or filtered.
+error	Another socket/network error occurred.
 
-Service names based purely on port numbers are best-effort identifications and should not be treated as definitive proof of the software running on that port.
 
----
+The CLI and exported results exclude closed entries but can include open, open|filtered, and error. The Open ports summary counts only confirmed open results; Open|Filtered ports is reported separately.
 
-## Banner Grabbing
+Important: open|filtered does not confirm that a UDP service is running. Many real UDP services ignore generic probes and require valid application-layer requests.
+Example UDP result
+The following is an example of a localhost test, not a claim about another network:
+[+] Protocol          : UDP
+[+] Target            : 127.0.0.1/32
+[+] Ports             : 123-123
 
-For supported services, NetRecon attempts to retrieve additional information from the service.
+PORT        STATE           SERVICE           BANNER
+--------    --------------  --------------    ------------------------------
+123/udp     OPEN|FILTERED   NTP               -
 
-For example:
+Hosts scanned     : 1
+Open ports        : 0
+Open|Filtered ports: 1
+Service names such as DNS (53), NTP (123), or SNMP (161) are based on well-known UDP port assignments, not active protocol fingerprinting.
+Port Presets
+Use --top-ports 10, --top-ports 20, or --top-ports 50. NetRecon selects different lists for TCP and UDP.
+# TCP preset
+python netrecon.py -t 127.0.0.1/32 --top-ports 20 --skip-discovery
 
-```text
-PORT        STATE       SERVICE           BANNER
---------    --------    --------------    ------------------------------
-8080/tcp    OPEN        HTTP-ALT          SimpleHTTP/0.6 Python/3.12.3
-```
+# UDP preset
+python netrecon.py -t 127.0.0.1/32 --udp --top-ports 20 --skip-discovery
+These are curated collections of commonly used service ports, not statistical frequency rankings and not equivalent to Nmap's port-frequency database.
 
-A simple local test server can be started with:
+-p and --top-ports are mutually exclusive.
+Scanning Options
+Timeout and Threads
+Defaults: 50 worker threads and 0.5-second per-port timeout.
+python netrecon.py -t 127.0.0.1/32 -p 1-100 --threads 25 --timeout 1 --skip-discovery
+Shorter timeouts can miss slow responses; larger thread counts create more simultaneous traffic. Use reasonable settings on authorized networks.
+Host Discovery
+By default, NetRecon checks which hosts respond to a ping before scanning. To scan the specified target(s) without this check:
+python netrecon.py -t 127.0.0.1/32 -p 1-100 --skip-discovery
+A host that does not respond to ping is not necessarily offline. Note that skipping discovery for a large CIDR range can generate many scans.
+Reverse DNS
+python netrecon.py -t 127.0.0.1/32 --top-ports 10 --resolve-hostnames
+If reverse resolution fails, NetRecon continues with the IP address.
+JSON and CSV Reports
+Both protocols support the same export flags:
+# Save a UDP scan in both formats
+python netrecon.py -t 127.0.0.1/32 --udp -p 123-123 --skip-discovery -o output/udp_scan.json --csv output/udp_scan.csv
 
-```bash
-python -m http.server 8080
-```
-
-Then scanned using:
-
-```bash
-python netrecon.py -t 127.0.0.1/32 --top-ports 20
-```
-
----
-
-## JSON Export
-
-Save scan results as JSON:
-
-```bash
-python netrecon.py \
-    -t 127.0.0.1/32 \
-    --top-ports 20 \
-    -o results/scan.json
-```
-
-Example:
-
-```json
+# Save a TCP scan in both formats
+python netrecon.py -t 127.0.0.1/32 -p 1-100 --skip-discovery -o output/tcp_scan.json --csv output/tcp_scan.csv
+JSON structure
+Illustrative output for a UDP port that did not respond:
 {
-    "scan_info": {
-        "target": "127.0.0.1/32",
-        "scan_mode": "top_ports",
-        "threads": 50,
-        "duration_seconds": 4.33,
-        "timeout_seconds": 0.2,
-        "selected_ports": [
-            22,
-            80,
-            443,
-            445
-        ]
-    },
-    "hosts": [
+  "scan_info": {
+    "target": "127.0.0.1/32",
+    "scan_mode": "range",
+    "threads": 50,
+    "duration_seconds": 0.51,
+    "timestamp": "2026-10-25T18:21:42+01:00",
+    "timeout_seconds": 0.5,
+    "port_range": "123-123"
+  },
+  "hosts": [
+    {
+      "ip": "127.0.0.1",
+      "hostname": null,
+      "ports": [
         {
-            "ip": "127.0.0.1",
-            "hostname": null,
-            "open_ports": [
-                {
-                    "port": 8080,
-                    "protocol": "tcp",
-                    "state": "open",
-                    "service": "HTTP-ALT",
-                    "banner": "SimpleHTTP/0.6 Python/3.12.3"
-                }
-            ]
+          "port": 123,
+          "protocol": "udp",
+          "state": "open|filtered",
+          "service": "NTP",
+          "banner": null
         }
-    ]
+      ],
+      "open_ports": []
+    }
+  ]
 }
-```
+- ports includes reported port entries, including open|filtered results.
+- open_ports includes only confirmed open entries, retained for compatibility with earlier output consumers.
+- scan_info.scan_mode describes range versus preset selection, not the transport protocol. Each port entry carries its own protocol field.
+- Timestamps and scan durations depend on the run.
+CSV columns
+ip,hostname,port,protocol,state,service,banner
+For example:
+ip,hostname,port,protocol,state,service,banner
+127.0.0.1,,123,udp,open|filtered,NTP,
+Privacy: JSON/CSV reports can contain internal hostnames, addresses, and service information. Do not commit generated reports or logs to public repositories. Add /output/ to .gitignore when using the example paths above.
+Logging
+NetRecon logs scan activity to results/netrecon.log, including scan parameters, discovered hosts, observed ports, service labels, and scan duration. Generated logs should remain outside Git tracking.
+Command-Line Reference
+Option	Description
+-t, --target	Target IP address or CIDR network (required).
+-p, --ports	Custom port range (e.g., 1-1000).
+--top-ports {10,20,50}	Use a curated TCP or UDP port preset.
+--udp	Use UDP instead of the default TCP scan.
+--threads	Number of worker threads (default: 50).
+--timeout	Per-port timeout in seconds (default: 0.5).
+--skip-discovery	Bypass ping-based host discovery.
+--resolve-hostnames	Attempt reverse DNS lookup.
+-o, --output	Save JSON results.
+--csv	Save CSV results.
+--version	Show the current program version.
+-h, --help	Show CLI usage.
 
-The actual `selected_ports` array contains the complete preset selected for the scan.
 
----
-
-## CSV Export
-
-Save results as CSV:
-
-```bash
-python netrecon.py \
-    -t 127.0.0.1/32 \
-    --top-ports 20 \
-    --csv results/scan.csv
-```
-
-CSV columns:
-
-```text
-ip
-hostname
-port
-protocol
-state
-service
-banner
-```
-
----
-
-## JSON + CSV Export
-
-Both formats can be generated during the same scan:
-
-```bash
-python netrecon.py \
-    -t 127.0.0.1/32 \
-    --top-ports 20 \
-    --timeout 0.2 \
-    --resolve-hostnames \
-    -o results/scan.json \
-    --csv results/scan.csv
-```
-
----
-
-## Logging
-
-NetRecon stores scan activity in:
-
-```text
-results/netrecon.log
-```
-
-Logs include information such as:
-
-```text
-Scan start
-Target
-Port configuration
-Thread count
-Timeout
-Discovered hosts
-Open ports
-Detected services
-Banner information
-Scan completion
-Scan duration
-```
-
-Generated scan results and logs are excluded from Git tracking through `.gitignore`.
-
----
-
-## Command-Line Options
-
-| Option | Description |
-|---|---|
-| `-t`, `--target` | Target IPv4 address or CIDR network |
-| `-p`, `--ports` | Custom TCP port range |
-| `--top-ports {10,20,50}` | Scan a preset of common TCP ports |
-| `--threads` | Number of worker threads |
-| `--timeout` | TCP connection timeout in seconds |
-| `--skip-discovery` | Skip ping-based host discovery |
-| `--resolve-hostnames` | Attempt reverse DNS resolution |
-| `-o`, `--output` | Save results as JSON |
-| `--csv` | Save results as CSV |
-| `--version` | Display NetRecon version |
-| `-h`, `--help` | Display CLI help |
-
-Show help:
-
-```bash
 python netrecon.py --help
-```
-
-Show version:
-
-```bash
 python netrecon.py --version
-```
-
----
-
-## Project Structure
-
-```text
+Project Structure
 netrecon/
-│
 ├── .github/
 │   └── workflows/
 │       └── tests.yml
-│
 ├── scanner/
 │   ├── __init__.py
 │   ├── host_scanner.py
 │   ├── port_presets.py
 │   ├── port_scanner.py
-│   └── service_detector.py
-│
+│   ├── service_detector.py
+│   └── udp_scanner.py          # New in v1.1.0
 ├── utils/
 │   ├── __init__.py
 │   ├── logger.py
 │   └── output.py
-│
 ├── tests/
 │   ├── __init__.py
+│   ├── test_cli_integration.py # New in v1.1.0
 │   ├── test_netrecon.py
 │   ├── test_output.py
 │   ├── test_port_presets.py
 │   ├── test_port_scanner.py
-│   └── test_service_detector.py
-│
+│   ├── test_service_detector.py
+│   ├── test_udp_port_presets.py # New in v1.1.0
+│   └── test_udp_scanner.py      # New in v1.1.0
 ├── results/
 │   └── .gitkeep
-│
 ├── .gitignore
 ├── LICENSE
 ├── README.md
 ├── requirements.txt
 └── netrecon.py
-```
-
----
-
-## Architecture
-
-NetRecon uses a modular reconnaissance pipeline:
-
-```text
-                  ┌─────────────────┐
-                  │     Target      │
-                  └────────┬────────┘
-                           │
-                           ▼
-                  ┌─────────────────┐
-                  │ Host Discovery  │
-                  └────────┬────────┘
-                           │
-                           ▼
-                  ┌─────────────────┐
-                  │ TCP Port Scan   │
-                  └────────┬────────┘
-                           │
-                           ▼
-                  ┌─────────────────┐
-                  │Service Detection│
-                  └────────┬────────┘
-                           │
-                           ▼
-                  ┌─────────────────┐
-                  │ Banner Grabbing │
-                  └────────┬────────┘
-                           │
-                           ▼
-                  ┌─────────────────┐
-                  │Hostname Resolve │
-                  └────────┬────────┘
-                           │
-                           ▼
-                  ┌─────────────────┐
-                  │ Scan Results    │
-                  └───────┬─┬─┬─────┘
-                          │ │ │
-                ┌─────────┘ │ └─────────┐
-                ▼           ▼           ▼
-             Terminal      JSON        CSV
-                              │
-                              ▼
-                             Log
-```
-
-The project separates scanning, service detection, output handling, logging, and testing into independent modules.
-
----
-
-## Testing
-
-NetRecon uses Python's built-in `unittest` framework.
-
-Run the complete test suite:
-
-```bash
+output/ is a generated reports directory and should be Git-ignored, not committed.
+Architecture
+                       Target IP / CIDR
+                              |
+                   Ping-based discovery
+                     (or skip discovery)
+                              |
+                        Protocol mode
+                         /        \
+                        /          \
+                 TCP connect      UDP probe
+                  scanning         scanning
+                     |                |
+              Service + banner    Port-based service
+              identification      label + UDP state
+                        \          /
+                         \        /
+                       Scan results
+                       /    |     \
+                  Terminal JSON    CSV
+                              |
+                         Scan logging
+Scanner, host discovery, service detection, reports, and tests are separated into independent modules.
+Testing
+NetRecon uses the standard-library unittest framework.
 python -m unittest discover -s tests -v
-```
+Latest local development run (25 October 2026): 34 tests passed, 0 failures. This does not yet confirm a green GitHub Actions run for the development branch.
 
-Current test suite:
+Coverage includes:
+- IPv4/CIDR and port-range validation
+- TCP open/closed port behavior and selected-port scanning
+- TCP common-port presets
+- TCP service name detection
+- UDP response and no-response states
+- UDP input validation and multiport scanning
+- UDP common-port presets (10/20/50)
+- Default TCP vs. selected UDP CLI mode
+- UDP CLI JSON/CSV exports
+- JSON and CSV serialization
+Some tests mock the scanner to verify CLI integration deterministically; others use localhost sockets. Successful tests do not guarantee correct identification of every real-world UDP service.
+Continuous Integration
+The GitHub Actions workflow at [`.github/workflows/tests.yml`](.github/workflows/tests.yml) is configured to run tests on pushes and pull requests using:
+- Python 3.10
+- Python 3.11
+- Python 3.12
+- Python 3.13
+Check GitHub Actions for the status of a particular commit or pull request.
+Development Status and Roadmap
+Published stable release: v1.0.0
 
-```text
-22 automated tests
-```
+Next release in development: v1.1.0 — adds UDP scanning, separate UDP port presets, updated reporting, and CLI integration tests. The local test suite currently passes; release tagging and remote CI validation remain to be completed.
 
-The tests currently cover:
-
-- Valid CIDR parsing
-- Invalid network handling
-- Single-IP targets
-- Valid port ranges
-- Invalid port ranges
-- Port boundary validation
-- TCP open-port detection
-- TCP closed-port detection
-- Port-range scanning
-- Custom port-list scanning
-- Top 10 port preset
-- Top 20 port preset
-- Top 50 port preset
-- Duplicate preset validation
-- HTTP service identification
-- HTTPS service identification
-- SSH service identification
-- SMB service identification
-- RDP service identification
-- MySQL service identification
-- JSON output
-- CSV output
-
-Example result:
-
-```text
-----------------------------------------------------------------------
-Ran 22 tests
-
-OK
-```
-
----
-
-## Continuous Integration
-
-NetRecon uses **GitHub Actions** to automatically run the test suite when code is pushed or a pull request is opened.
-
-The CI workflow currently tests NetRecon against:
-
-```text
-Python 3.10
-Python 3.11
-Python 3.12
-Python 3.13
-```
-
-Workflow:
-
-```text
-.github/workflows/tests.yml
-```
-
-This helps verify compatibility across multiple supported Python versions.
-
----
-
-## Development Status
-
-Current stable release:
-
-```text
-NetRecon v1.0.0
-```
-
-Feature status:
-
-| Feature | Status |
-|---|:---:|
-| IPv4 / CIDR parsing | ✅ |
-| Host discovery | ✅ |
-| Multithreaded discovery | ✅ |
-| TCP port scanning | ✅ |
-| Multithreaded port scanning | ✅ |
-| Custom port ranges | ✅ |
-| Common-port presets | ✅ |
-| Configurable timeout | ✅ |
-| Service detection | ✅ |
-| Banner grabbing | ✅ |
-| HTTP/HTTPS detection | ✅ |
-| Reverse DNS | ✅ |
-| Skip discovery | ✅ |
-| JSON export | ✅ |
-| CSV export | ✅ |
-| Logging | ✅ |
-| Unit tests | ✅ |
-| GitHub Actions CI | ✅ |
-
----
-
-## Roadmap
-
-Potential future improvements include:
-
-- Improved protocol fingerprinting
-- More advanced service/version detection
-- Additional scan profiles
-- UDP scanning support
-- Configurable banner timeout
-- Improved scan statistics
-- Optional colored terminal output
-- Python package / CLI installation
-- Additional test coverage
+Potential future improvements:
+- Protocol-specific UDP probes for more reliable results
+- More advanced service/version fingerprinting
+- Configurable banner-grabbing timeout
+- Richer scan metrics and progress indicators
+- Optional colored terminal output and HTML reports
+- Python packaging / installable CLI
 - IPv6 support
+- Additional negative-path and integration tests
+Security and Ethical Use
+NetRecon is intended for personal devices, local development environments, virtual machines, home labs, CTFs, and other environments where testing is authorized.
 
----
+Do not scan networks or hosts without permission. Scanning can trigger IDS/IPS alerts, breach policy, or disrupt fragile services. Users are responsible for compliance with relevant laws and policies.
+License
+Licensed under the MIT License. See LICENSE.
+Author
+Arda Günaydın — Computer Science student focused on networking, cybersecurity, and network security engineering.
 
-## Security and Ethical Use
+GitHub: @ardgunaydin
 
-NetRecon is intended for:
-
-- Personal systems
-- Local development environments
-- Home labs
-- Virtual machines
-- CTF environments
-- Cybersecurity training platforms
-- Networks where explicit authorization has been granted
-
-Do **not** use NetRecon to scan devices, systems, or networks without authorization.
-
-Network reconnaissance can trigger IDS/IPS systems, violate organizational policies, disrupt services, or violate applicable laws when performed without permission.
-
-Always ensure that you have authorization before scanning a target.
-
----
-
-## Disclaimer
-
-This project was created for educational purposes and authorized cybersecurity testing.
-
-The author assumes no responsibility for misuse, damage, policy violations, or unlawful activity resulting from the use of this software.
-
-Users are responsible for ensuring that their use of NetRecon complies with all applicable laws, regulations, and network policies.
-
----
-
-## License
-
-This project is licensed under the **MIT License**.
-
-See the [LICENSE](LICENSE) file for details.
-
----
-
-## Author
-
-**Arda Günaydın**
-
-Computer Science student focused on networking, cybersecurity, and network security engineering.
-
-GitHub: [@ardgunaydin](https://github.com/ardgunaydin)
-
----
-
-## Repository
-
-https://github.com/ardgunaydin/netrecon
+Repository: github.com/ardgunaydin/netrecon

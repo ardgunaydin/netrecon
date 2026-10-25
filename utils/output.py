@@ -1,3 +1,6 @@
+
+# C:\Users\USER\netrecon\utils\output.py
+
 import csv
 import json
 import os
@@ -16,74 +19,55 @@ def save_json_results(
     selected_ports=None,
     timeout=None
 ):
-    directory = os.path.dirname(
-        filename
-    )
+    directory = os.path.dirname(filename)
 
     if directory:
-        os.makedirs(
-            directory,
-            exist_ok=True
-        )
+        os.makedirs(directory, exist_ok=True)
 
     scan_info = {
         "target": str(target),
         "scan_mode": scan_mode,
         "threads": threads,
-        "duration_seconds": round(
-            duration,
-            2
-        ),
-        "timestamp": (
-            datetime.now()
-            .astimezone()
-            .isoformat()
-        )
+        "duration_seconds": round(duration, 2),
+        "timestamp": datetime.now().astimezone().isoformat()
     }
 
     if timeout is not None:
-        scan_info[
-            "timeout_seconds"
-        ] = timeout
+        scan_info["timeout_seconds"] = timeout
 
     if scan_mode == "top_ports":
-        scan_info[
-            "selected_ports"
-        ] = selected_ports or []
-
+        scan_info["selected_ports"] = selected_ports or []
     else:
-        scan_info[
-            "port_range"
-        ] = (
-            f"{start_port}-{end_port}"
-        )
+        scan_info["port_range"] = f"{start_port}-{end_port}"
 
     data = {
         "scan_info": scan_info,
         "hosts": []
     }
 
-    for host, host_info in (
-        scan_results.items()
-    ):
+    # Process scan results for each host
+    for host, host_info in (scan_results or {}).items():
+
+        ports = host_info["ports"]
+
         host_data = {
             "ip": host,
-            "hostname": (
-                host_info[
-                    "hostname"
-                ]
-            ),
-            "open_ports": (
-                host_info[
-                    "ports"
-                ]
-            )
+            "hostname": host_info["hostname"],
+
+            # All reported TCP and UDP ports
+            "ports": ports,
+
+            # Only confirmed open ports
+            "open_ports": [
+                port_info
+                for port_info in ports
+                if port_info["state"] == "open"
+            ]
         }
 
-        data["hosts"].append(
-            host_data
-        )
+        data["hosts"].append(host_data)
 
+    # Save JSON report
     with open(
         filename,
         "w",
@@ -96,25 +80,17 @@ def save_json_results(
         )
 
     print()
-    print(
-        f"[+] JSON results "
-        f"saved to: {filename}"
-    )
+    print(f"[+] JSON results saved to: {filename}")
 
 
 def save_csv_results(
     filename,
     scan_results
 ):
-    directory = os.path.dirname(
-        filename
-    )
+    directory = os.path.dirname(filename)
 
     if directory:
-        os.makedirs(
-            directory,
-            exist_ok=True
-        )
+        os.makedirs(directory, exist_ok=True)
 
     with open(
         filename,
@@ -123,9 +99,7 @@ def save_csv_results(
         encoding="utf-8"
     ) as file:
 
-        writer = csv.writer(
-            file
-        )
+        writer = csv.writer(file)
 
         writer.writerow([
             "ip",
@@ -137,19 +111,11 @@ def save_csv_results(
             "banner"
         ])
 
-        for host, host_info in (
-            scan_results.items()
-        ):
-            hostname = (
-                host_info[
-                    "hostname"
-                ]
-                or ""
-            )
+        # Process results for each host
+        for host, host_info in scan_results.items():
 
-            ports = host_info[
-                "ports"
-            ]
+            hostname = host_info["hostname"] or ""
+            ports = host_info["ports"]
 
             if not ports:
                 writer.writerow([
@@ -161,7 +127,6 @@ def save_csv_results(
                     "",
                     ""
                 ])
-
                 continue
 
             for port_info in ports:
@@ -172,12 +137,8 @@ def save_csv_results(
                     port_info["protocol"],
                     port_info["state"],
                     port_info["service"],
-                    port_info["banner"]
-                    or ""
+                    port_info["banner"] or ""
                 ])
 
     print()
-    print(
-        f"[+] CSV results "
-        f"saved to: {filename}"
-    )
+    print(f"[+] CSV results saved to: {filename}")
