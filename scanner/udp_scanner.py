@@ -4,6 +4,11 @@ import errno
 import socket
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from scanner.udp_probes import (
+    build_udp_probe,
+    is_valid_udp_response
+)
+
 
 def scan_udp_port(ip, port, timeout=0.5):
     """
@@ -32,13 +37,17 @@ def scan_udp_port(ip, port, timeout=0.5):
 
             sock.connect((str(ip), port))
 
-            # Generic UDP probe
-            sock.send(b"\x00")
+          # Build and send a protocol-aware UDP probe
+            probe = build_udp_probe(port)
+            sock.send(probe)
 
-            # Wait for a UDP response
-            sock.recv(4096)
+            # Receive and validate the UDP response
+            response = sock.recv(4096)
 
-            return "open"
+            if is_valid_udp_response(port, response):
+                return "open"
+
+            return "open|filtered"
 
     except socket.timeout:
         return "open|filtered"
