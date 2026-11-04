@@ -1,5 +1,6 @@
 import socket
 import ssl
+from scanner.fingerprint_parser import parse_service_fingerprint
 
 
 COMMON_SERVICES = {
@@ -177,30 +178,32 @@ def grab_generic_banner(ip, port, timeout=2):
     return None
 
 
-def detect_service_version(ip, port):
-    service = detect_service(port)
 
+def detect_service_version(ip, port, timeout=2):
+    """
+    Identify a TCP service and analyze its banner.
+
+    Returns service name, raw banner and parsed fingerprint.
+    """
+    service = detect_service(port)
     banner = None
 
     if port in (80, 8080):
-        banner = grab_http_banner(
-            ip,
-            port
-        )
+        banner = grab_http_banner(ip, port, timeout=timeout)
 
     elif port in (443, 8443):
-        banner = grab_https_banner(
-            ip,
-            port
-        )
+        banner = grab_https_banner(ip, port, timeout=timeout)
 
     else:
-        banner = grab_generic_banner(
-            ip,
-            port
-        )
+        banner = grab_generic_banner(ip, port, timeout=timeout)
+
+    fingerprint = parse_service_fingerprint(
+        service,
+        banner
+    )
 
     return {
         "service": service,
-        "banner": banner
+        "banner": banner,
+        "fingerprint": fingerprint
     }
