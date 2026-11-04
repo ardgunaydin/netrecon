@@ -1,6 +1,4 @@
 
-# C:\Users\USER\netrecon\utils\output.py
-
 import csv
 import json
 import os
@@ -54,10 +52,11 @@ def save_json_results(
             "ip": host,
             "hostname": host_info["hostname"],
 
-            # All reported TCP and UDP ports
+            # Include all TCP and UDP port results
+            # including optional fingerprint information
             "ports": ports,
 
-            # Only confirmed open ports
+            # Only ports classified as open
             "open_ports": [
                 port_info
                 for port_info in ports
@@ -76,7 +75,8 @@ def save_json_results(
         json.dump(
             data,
             file,
-            indent=4
+            indent=4,
+            ensure_ascii=False
         )
 
     print()
@@ -101,6 +101,7 @@ def save_csv_results(
 
         writer = csv.writer(file)
 
+        # CSV header including fingerprint information
         writer.writerow([
             "ip",
             "hostname",
@@ -108,7 +109,8 @@ def save_csv_results(
             "protocol",
             "state",
             "service",
-            "banner"
+            "banner",
+            "fingerprint"
         ])
 
         # Process results for each host
@@ -117,10 +119,12 @@ def save_csv_results(
             hostname = host_info["hostname"] or ""
             ports = host_info["ports"]
 
+            # Preserve hosts without reported ports
             if not ports:
                 writer.writerow([
                     host,
                     hostname,
+                    "",
                     "",
                     "",
                     "",
@@ -130,6 +134,19 @@ def save_csv_results(
                 continue
 
             for port_info in ports:
+
+                fingerprint = port_info.get("fingerprint")
+
+                # Store structured fingerprint data in CSV
+                fingerprint_text = (
+                    json.dumps(
+                        fingerprint,
+                        ensure_ascii=False
+                    )
+                    if fingerprint is not None
+                    else ""
+                )
+
                 writer.writerow([
                     host,
                     hostname,
@@ -137,7 +154,8 @@ def save_csv_results(
                     port_info["protocol"],
                     port_info["state"],
                     port_info["service"],
-                    port_info["banner"] or ""
+                    port_info.get("banner") or "",
+                    fingerprint_text
                 ])
 
     print()

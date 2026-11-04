@@ -454,7 +454,8 @@ def main():
                     "protocol": "tcp",
                     "state": "open",
                     "service": service_info["service"],
-                    "banner": service_info["banner"]
+                    "banner": service_info["banner"],
+                    "fingerprint": service_info.get("fingerprint")
                 }
 
                 formatted_ports.append(port_info)
@@ -552,6 +553,23 @@ def main():
                     )
 
                     port_state = port_info["state"].upper()
+
+                    fingerprint = port_info.get("fingerprint")
+
+                    if fingerprint:
+                        details = (
+                            fingerprint.get("software")
+                            or fingerprint.get("details")
+                            or ""
+                        )
+
+                        version = fingerprint.get("version")
+
+                        if version:
+                            details = f"{details} {version}".strip()
+
+                        if details:
+                            banner = f"{banner} | Detected: {details}"
 
                     print(
                         f"{port_label:<12}"
