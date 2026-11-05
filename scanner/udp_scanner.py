@@ -1,4 +1,5 @@
-# scanner/udp_scanner.py
+
+"""UDP scanning with protocol-aware probes and progress tracking."""
 
 import errno
 import socket
@@ -9,23 +10,29 @@ from scanner.udp_probes import (
     is_valid_udp_response
 )
 
+from utils.progress import ScanProgress
+
 
 def scan_udp_port(ip, port, timeout=0.5):
     """
     Scan a single UDP port.
 
     Possible states:
-    - open: A UDP response was received.
-    - closed: Connection refused (ICMP port unreachable).
-    - open|filtered: No response received.
-    - error: Other network/socket errors.
+    - open: Valid UDP response received.
+    - closed: Connection refused or port unreachable.
+    - open|filtered: Timeout or invalid response.
+    - error: Other socket or network errors.
     """
 
     if not 1 <= port <= 65535:
-        raise ValueError("Port must be between 1 and 65535.")
+        raise ValueError(
+            "Port must be between 1 and 65535."
+        )
 
     if timeout <= 0:
-        raise ValueError("Timeout must be greater than 0.")
+        raise ValueError(
+            "Timeout must be greater than 0."
+        )
 
     try:
         with socket.socket(
@@ -37,13 +44,16 @@ def scan_udp_port(ip, port, timeout=0.5):
 
             sock.connect((str(ip), port))
 
-          # Build and send a protocol-aware UDP probe
+            # Build a protocol-aware UDP probe
             probe = build_udp_probe(port)
+
+            # Send the probe
             sock.send(probe)
 
-            # Receive and validate the UDP response
+            # Receive the response
             response = sock.recv(4096)
 
+            # Validate the protocol response
             if is_valid_udp_response(port, response):
                 return "open"
 
@@ -53,14 +63,18 @@ def scan_udp_port(ip, port, timeout=0.5):
         return "open|filtered"
 
     except OSError as error:
-        error_code = getattr(error, "winerror", None)
+        error_code = getattr(
+            error,
+            "winerror",
+            None
+        )
 
         if error_code is None:
             error_code = error.errno
 
         if error_code in (
             errno.ECONNREFUSED,
-            10054  # Windows: WSAECONNRESET
+            10054  # Windows WSAECONNRESET
         ):
             return "closed"
 
@@ -73,14 +87,26 @@ def scan_udp_ports(
     end_port=None,
     ports=None,
     threads=50,
-    timeout=0.5
+    timeout=0.5,
+    progress=None,
+    on_progress=None
 ):
     """
     Scan multiple UDP ports concurrently.
+
+    Supports optional thread-safe progress tracking
+    and progress callbacks.
     """
 
     if threads < 1:
-        raise ValueError("Threads must be greater than 0.")
+        raise ValueError(
+            "Threads must be greater than 0."
+        )
+
+    if timeout <= 0:
+        raise ValueError(
+            "Timeout must be greater than 0."
+        )
 
     if ports is not None:
         target_ports = sorted(set(ports))
@@ -92,17 +118,44 @@ def scan_udp_ports(
             )
 
         if not 1 <= start_port <= end_port <= 65535:
-            raise ValueError("Invalid UDP port range.")
+            raise ValueError(
+                "Invalid UDP port range."
+            )
 
         target_ports = list(
             range(start_port, end_port + 1)
+        )
+
+    if any(
+        not isinstance(port, int)
+        or isinstance(port, bool)
+        or not 1 <= port <= 65535
+        for port in target_ports
+    ):
+        raise ValueError(
+            "Ports must be integers between 1 and 65535."
+        )
+
+    total_ports = len(target_ports)
+
+    if progress is None:
+        progress = ScanProgress(total_ports)
+
+    elif progress.snapshot()["total"] != total_ports:
+        raise ValueError(
+            "Progress total does not match target ports."
+        )
+
+    if progress.snapshot()["completed"] != 0:
+        raise ValueError(
+            "Progress tracker must start at zero."
         )
 
     results = []
 
     print(
         f"\n[*] Starting UDP scan on {ip} "
-        f"({len(target_ports)} ports)..."
+        f"({total_ports} ports)..."
     )
 
     with ThreadPoolExecutor(
@@ -122,7 +175,15 @@ def scan_udp_ports(
         for future in as_completed(futures):
             port = futures[future]
 
-            state = future.result()
+            try:
+                state = future.result()
+
+            except Exception as error:
+                print(
+                    f"[!] Error scanning "
+                    f"{ip}:{port}/udp: {error}"
+                )
+                state = "error"
 
             results.append({
                 "port": port,
@@ -139,6 +200,16 @@ def scan_udp_ports(
                 print(
                     f"[?] {ip}:{port}/udp OPEN|FILTERED"
                 )
+
+            elif state == "error":
+                print(
+                    f"[!] {ip}:{port}/udp ERROR"
+                )
+
+            progress.advance()
+
+            if on_progress is not None:
+                on_progress(progress.snapshot())
 
     return sorted(
         results,
