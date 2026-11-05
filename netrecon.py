@@ -2,6 +2,7 @@ import argparse
 import ipaddress
 import socket
 import time
+from utils.html_report import save_html_report
 
 from utils.progress import ScanProgress
 from utils.progress_display import ProgressReporter
@@ -189,6 +190,11 @@ def main():
             "Save scan results "
             "to a CSV file"
         )
+    )
+
+    parser.add_argument(
+        "--html",
+        help="Save scan results as a standalone HTML report"
     )
 
     parser.add_argument(
@@ -723,6 +729,30 @@ def main():
             logger.error(
                 f"Could not save "
                 f"CSV output: {error}"
+            )
+
+
+
+    # ==================================================
+    # HTML OUTPUT
+    # ==================================================
+
+    if args.html:
+        try:
+            save_html_report(
+                filename=args.html,
+                target=network,
+                scan_results=scan_results,
+                duration=duration
+            )
+
+        except OSError as error:
+            print(
+                f"[!] Could not save HTML output: {error}"
+            )
+
+            logger.error(
+                f"Could not save HTML output: {error}"
             )
 
     # ==================================================
