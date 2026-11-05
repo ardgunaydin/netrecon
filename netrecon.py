@@ -165,6 +165,16 @@ def main():
     )
 
     parser.add_argument(
+        "--banner-timeout",
+        type=float,
+        default=2.0,
+        help=(
+            "TCP service banner timeout in seconds "
+            "(default: 2.0)"
+    )
+)
+
+    parser.add_argument(
         "-o",
         "--output",
         help=(
@@ -233,6 +243,13 @@ def main():
     if args.timeout <= 0:
         print(
             "[!] Timeout must be greater than 0."
+        )
+        return
+
+    if not 0 < args.banner_timeout <= 60:
+        print(
+            "[!] Banner timeout must be "
+            "between 0 and 60 seconds."
         )
         return
 
@@ -315,6 +332,11 @@ def main():
     print(
         f"[+] Timeout           : "
         f"{args.timeout} seconds"
+    )
+
+    print(
+        f"[+] Banner timeout    : "
+        f"{args.banner_timeout} seconds"
     )
 
     print(
@@ -462,7 +484,9 @@ def main():
 
             for port in open_ports:
                 service_info = detect_service_version(
-                    host, port
+                    host,
+                    port,
+                    timeout=args.banner_timeout
                 )
 
                 port_info = {
