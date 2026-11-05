@@ -2,6 +2,7 @@ import argparse
 import ipaddress
 import socket
 import time
+from utils.html_report import save_html_report
 
 from utils.progress import ScanProgress
 from utils.progress_display import ProgressReporter
@@ -19,7 +20,7 @@ from utils.output import (
 )
 
 
-VERSION = "1.1.0"
+VERSION = "1.3.0"
 
 
 def validate_network(network):
@@ -165,6 +166,16 @@ def main():
     )
 
     parser.add_argument(
+        "--banner-timeout",
+        type=float,
+        default=2.0,
+        help=(
+            "TCP service banner timeout in seconds "
+            "(default: 2.0)"
+    )
+)
+
+    parser.add_argument(
         "-o",
         "--output",
         help=(
@@ -179,6 +190,11 @@ def main():
             "Save scan results "
             "to a CSV file"
         )
+    )
+
+    parser.add_argument(
+        "--html",
+        help="Save scan results as a standalone HTML report"
     )
 
     parser.add_argument(
@@ -233,6 +249,13 @@ def main():
     if args.timeout <= 0:
         print(
             "[!] Timeout must be greater than 0."
+        )
+        return
+
+    if not 0 < args.banner_timeout <= 60:
+        print(
+            "[!] Banner timeout must be "
+            "between 0 and 60 seconds."
         )
         return
 
@@ -315,6 +338,11 @@ def main():
     print(
         f"[+] Timeout           : "
         f"{args.timeout} seconds"
+    )
+
+    print(
+        f"[+] Banner timeout    : "
+        f"{args.banner_timeout} seconds"
     )
 
     print(
@@ -462,7 +490,9 @@ def main():
 
             for port in open_ports:
                 service_info = detect_service_version(
-                    host, port
+                    host,
+                    port,
+                    timeout=args.banner_timeout
                 )
 
                 port_info = {
@@ -699,6 +729,30 @@ def main():
             logger.error(
                 f"Could not save "
                 f"CSV output: {error}"
+            )
+
+
+
+    # ==================================================
+    # HTML OUTPUT
+    # ==================================================
+
+    if args.html:
+        try:
+            save_html_report(
+                filename=args.html,
+                target=network,
+                scan_results=scan_results,
+                duration=duration
+            )
+
+        except OSError as error:
+            print(
+                f"[!] Could not save HTML output: {error}"
+            )
+
+            logger.error(
+                f"Could not save HTML output: {error}"
             )
 
     # ==================================================
