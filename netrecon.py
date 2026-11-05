@@ -3,6 +3,9 @@ import ipaddress
 import socket
 import time
 
+from utils.progress import ScanProgress
+from utils.progress_display import ProgressReporter
+
 from scanner.host_scanner import discover_hosts
 from scanner.port_scanner import scan_ports
 from scanner.udp_scanner import scan_udp_ports
@@ -388,6 +391,15 @@ def main():
 
         formatted_ports = []
 
+        total_ports = (
+            len(selected_ports)
+            if selected_ports is not None
+            else end_port - start_port + 1
+        )
+
+        scan_progress = ScanProgress(total_ports)
+        progress_reporter = ProgressReporter(interval=0.5)
+
         # ==============================================
         # UDP PORT SCANNING
         # ==============================================
@@ -399,7 +411,9 @@ def main():
                 end_port=end_port,
                 ports=selected_ports,
                 threads=args.threads,
-                timeout=args.timeout
+                timeout=args.timeout,
+                progress=scan_progress,
+                on_progress=progress_reporter
             )
 
             for result in udp_results:
@@ -441,7 +455,9 @@ def main():
                 end_port=end_port,
                 ports=selected_ports,
                 threads=args.threads,
-                timeout=args.timeout
+                timeout=args.timeout,
+                progress=scan_progress,
+                on_progress=progress_reporter
             )
 
             for port in open_ports:
