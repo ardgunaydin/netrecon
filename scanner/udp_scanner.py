@@ -1,5 +1,5 @@
 
-"""UDP scanning with protocol-aware probes and progress tracking."""
+"""UDP scanning with request-aware validation and progress tracking."""
 
 import errno
 import socket
@@ -7,7 +7,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from scanner.udp_probes import (
     build_udp_probe,
-    is_valid_udp_response
+    is_valid_udp_response,
+    validate_dns_response,
+    validate_ntp_response,
 )
 
 from utils.progress import ScanProgress
@@ -17,12 +19,15 @@ def scan_udp_port(ip, port, timeout=0.5):
     """
     Scan a single UDP port.
 
-    Possible states:
-    - open: Valid UDP response received.
+    States:
+    - open: A response passed protocol validation.
     - closed: Connection refused or port unreachable.
     - open|filtered: Timeout or invalid response.
-    - error: Other socket or network errors.
+    - error: Other socket/network errors.
     """
+
+    if not isinstance(port, int) or isinstance(port, bool):
+        raise ValueError("Port must be an integer.")
 
     if not 1 <= port <= 65535:
         raise ValueError(
@@ -41,20 +46,39 @@ def scan_udp_port(ip, port, timeout=0.5):
         ) as sock:
 
             sock.settimeout(timeout)
-
             sock.connect((str(ip), port))
 
-            # Build a protocol-aware UDP probe
+            # Generate the appropriate request.
             probe = build_udp_probe(port)
 
-            # Send the probe
+            # Send the original request.
             sock.send(probe)
 
-            # Receive the response
+            # Receive the server response.
             response = sock.recv(4096)
 
-            # Validate the protocol response
-            if is_valid_udp_response(port, response):
+            # DNS request-response correlation.
+            if port == 53:
+                valid = validate_dns_response(
+                    response,
+                    probe
+                )
+
+            # NTP request-response correlation.
+            elif port == 123:
+                valid = validate_ntp_response(
+                    response,
+                    probe
+                )
+
+            # Generic UDP validation.
+            else:
+                valid = is_valid_udp_response(
+                    port,
+                    response
+                )
+
+            if valid:
                 return "open"
 
             return "open|filtered"
@@ -92,10 +116,7 @@ def scan_udp_ports(
     on_progress=None
 ):
     """
-    Scan multiple UDP ports concurrently.
-
-    Supports optional thread-safe progress tracking
-    and progress callbacks.
+    Concurrent UDP scanning with optional progress tracking.
     """
 
     if threads < 1:
