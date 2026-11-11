@@ -3,6 +3,7 @@
 
 import secrets
 import struct
+import time
 
 
 # ==================================================
@@ -130,8 +131,13 @@ def validate_dns_response(response, query):
     if query[:2] != response[:2]:
         return False
 
-    query_flags = struct.unpack("!H", query[2:4])[0]
-    response_flags = struct.unpack("!H", response[2:4])[0]
+    query_flags = struct.unpack(
+        "!H", query[2:4]
+    )[0]
+
+    response_flags = struct.unpack(
+        "!H", response[2:4]
+    )[0]
 
     # Original query must not be a response.
     if query_flags & 0x8000:
@@ -169,22 +175,52 @@ def validate_dns_response(response, query):
 # NTP PROBES
 # ==================================================
 
+NTP_EPOCH_OFFSET = 2208988800
+NANOSECONDS_PER_SECOND = 1_000_000_000
+
+
 def build_ntp_request():
     """
-    Build a 48-byte NTPv4 client request.
+    Build a standards-compatible 48-byte NTPv4 client request.
 
-    Use a random nonzero transmit timestamp as a
-    request-correlation token.
+    NTP timestamps contain:
+    - 32 bits: seconds since 1900-01-01
+    - 32 bits: fractional seconds
+
+    Unix timestamps begin at 1970-01-01.
+    The epoch difference is 2208988800 seconds.
     """
     request = bytearray(48)
 
-    # Leap = 0, Version = 4, Mode = 3 (client)
+    # Leap Indicator = 0
+    # Version = 4
+    # Mode = 3 (client)
     request[0] = 0x23
 
-    token = secrets.randbits(64) or 1
+    # Current Unix timestamp with nanosecond precision.
+    unix_nanoseconds = time.time_ns()
 
-    # NTP transmit timestamp: bytes 40-47
-    request[40:48] = struct.pack("!Q", token)
+    unix_seconds, nanoseconds = divmod(
+        unix_nanoseconds,
+        NANOSECONDS_PER_SECOND
+    )
+
+    # Convert Unix seconds to NTP seconds.
+    ntp_seconds = (
+        unix_seconds + NTP_EPOCH_OFFSET
+    ) & 0xFFFFFFFF
+
+    # Convert nanoseconds to a 32-bit NTP fraction.
+    ntp_fraction = (
+        nanoseconds * (1 << 32)
+    ) // NANOSECONDS_PER_SECOND
+
+    # NTP transmit timestamp occupies bytes 40-47.
+    request[40:48] = struct.pack(
+        "!II",
+        ntp_seconds,
+        ntp_fraction
+    )
 
     return bytes(request)
 

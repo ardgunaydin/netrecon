@@ -1,6 +1,7 @@
 
-"""Tests for NTP request-response correlation."""
+"""Tests for NTP timestamp generation and response validation."""
 
+import struct
 import unittest
 from unittest.mock import patch
 
@@ -12,10 +13,13 @@ from scanner.udp_probes import (
 
 class TestNTPValidation(unittest.TestCase):
 
+    FIXED_TIME_NS = 1_700_000_000_123_456_789
+    NTP_EPOCH_OFFSET = 2_208_988_800
+
     def setUp(self):
         with patch(
-            "scanner.udp_probes.secrets.randbits",
-            return_value=0x123456789ABCDEF0
+            "scanner.udp_probes.time.time_ns",
+            return_value=self.FIXED_TIME_NS
         ):
             self.request = build_ntp_request()
 
@@ -25,10 +29,10 @@ class TestNTPValidation(unittest.TestCase):
         # NTPv4 server mode
         response[0] = 0x24
 
-        # Primary reference server
+        # Valid stratum
         response[1] = 2
 
-        # Echo the client transmit timestamp
+        # Echo client's transmit timestamp
         response[24:32] = self.request[40:48]
 
         # Server transmit timestamp
@@ -36,12 +40,46 @@ class TestNTPValidation(unittest.TestCase):
 
         return response
 
-    def test_request_contains_token(self):
+    def test_request_length(self):
         self.assertEqual(len(self.request), 48)
 
-        self.assertEqual(
+    def test_ntp_client_mode(self):
+        self.assertEqual(self.request[0], 0x23)
+
+    def test_ntp_seconds_conversion(self):
+        seconds = struct.unpack(
+            "!I",
+            self.request[40:44]
+        )[0]
+
+        expected = (
+            1_700_000_000 + self.NTP_EPOCH_OFFSET
+        ) & 0xFFFFFFFF
+
+        self.assertEqual(seconds, expected)
+
+    def test_ntp_fraction_conversion(self):
+        fraction = struct.unpack(
+            "!I",
+            self.request[44:48]
+        )[0]
+
+        expected = (
+            123_456_789 * (1 << 32)
+        ) // 1_000_000_000
+
+        self.assertEqual(fraction, expected)
+
+    def test_timestamp_changes_with_time(self):
+        with patch(
+            "scanner.udp_probes.time.time_ns",
+            return_value=self.FIXED_TIME_NS + 1_000_000_000
+        ):
+            second_request = build_ntp_request()
+
+        self.assertNotEqual(
             self.request[40:48],
-            bytes.fromhex("123456789abcdef0")
+            second_request[40:48]
         )
 
     def test_valid_ntp_response(self):
@@ -89,8 +127,6 @@ class TestNTPValidation(unittest.TestCase):
 
     def test_unsynchronized_server(self):
         response = self.make_response()
-
-        # Leap indicator = 3
         response[0] = 0xE4
 
         self.assertFalse(
