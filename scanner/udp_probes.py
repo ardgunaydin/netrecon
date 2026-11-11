@@ -3,6 +3,7 @@
 
 import secrets
 import struct
+import time
 
 
 # ==================================================
@@ -30,60 +31,196 @@ def build_dns_query():
     return header + question
 
 
+def _read_dns_name(packet, offset):
+    """
+    Parse a DNS name, including compression pointers.
+
+    Returns (normalized_labels, next_offset), or None
+    for malformed names.
+    """
+    labels = []
+    visited = set()
+    next_offset = None
+    name_length = 1
+
+    for _ in range(128):
+        if offset >= len(packet):
+            return None
+
+        length = packet[offset]
+
+        if length & 0xC0 == 0xC0:
+            if offset + 1 >= len(packet):
+                return None
+
+            pointer = (
+                ((length & 0x3F) << 8)
+                | packet[offset + 1]
+            )
+
+            # DNS pointers must point backwards.
+            if pointer >= offset or pointer in visited:
+                return None
+
+            visited.add(pointer)
+
+            if next_offset is None:
+                next_offset = offset + 2
+
+            offset = pointer
+            continue
+
+        if length & 0xC0:
+            return None
+
+        offset += 1
+
+        if length == 0:
+            return (
+                tuple(labels),
+                next_offset if next_offset is not None else offset
+            )
+
+        if length > 63 or offset + length > len(packet):
+            return None
+
+        name_length += length + 1
+
+        if name_length > 255:
+            return None
+
+        labels.append(
+            packet[offset:offset + length].lower()
+        )
+
+        offset += length
+
+    return None
+
+
+def _parse_dns_question(packet):
+    """Read the first DNS question safely."""
+    parsed = _read_dns_name(packet, 12)
+
+    if parsed is None:
+        return None
+
+    labels, offset = parsed
+
+    if offset + 4 > len(packet):
+        return None
+
+    question_type, question_class = struct.unpack(
+        "!HH",
+        packet[offset:offset + 4]
+    )
+
+    return labels, question_type, question_class
+
+
 def validate_dns_response(response, query):
-    """Check that a DNS response matches the original query."""
+    """
+    Validate a DNS response against the original request.
+
+    Names are compared case-insensitively, while DNS
+    transaction ID, opcode, type and class must match.
+    """
     if len(query) < 17 or len(response) < 17:
         return False
 
     if query[:2] != response[:2]:
         return False
 
-    query_flags = struct.unpack("!H", query[2:4])[0]
-    response_flags = struct.unpack("!H", response[2:4])[0]
+    query_flags = struct.unpack(
+        "!H", query[2:4]
+    )[0]
 
+    response_flags = struct.unpack(
+        "!H", response[2:4]
+    )[0]
+
+    # Original query must not be a response.
     if query_flags & 0x8000:
         return False
 
+    # Received packet must be a response.
     if not response_flags & 0x8000:
         return False
 
+    # Match DNS opcode.
     if (query_flags & 0x7800) != (response_flags & 0x7800):
         return False
 
-    query_questions = struct.unpack("!H", query[4:6])[0]
-    response_questions = struct.unpack("!H", response[4:6])[0]
+    query_questions = struct.unpack(
+        "!H", query[4:6]
+    )[0]
+
+    response_questions = struct.unpack(
+        "!H", response[4:6]
+    )[0]
 
     if query_questions != 1 or response_questions != 1:
         return False
 
-    question = query[12:]
+    original_question = _parse_dns_question(query)
+    returned_question = _parse_dns_question(response)
 
-    if response[12:12 + len(question)] != question:
+    if original_question is None or returned_question is None:
         return False
 
-    return True
+    return original_question == returned_question
 
 
 # ==================================================
 # NTP PROBES
 # ==================================================
 
+NTP_EPOCH_OFFSET = 2208988800
+NANOSECONDS_PER_SECOND = 1_000_000_000
+
+
 def build_ntp_request():
     """
-    Build a 48-byte NTPv4 client request.
+    Build a standards-compatible 48-byte NTPv4 client request.
 
-    Use a random nonzero transmit timestamp as a
-    request-correlation token.
+    NTP timestamps contain:
+    - 32 bits: seconds since 1900-01-01
+    - 32 bits: fractional seconds
+
+    Unix timestamps begin at 1970-01-01.
+    The epoch difference is 2208988800 seconds.
     """
     request = bytearray(48)
 
-    # Leap = 0, Version = 4, Mode = 3 (client)
+    # Leap Indicator = 0
+    # Version = 4
+    # Mode = 3 (client)
     request[0] = 0x23
 
-    token = secrets.randbits(64) or 1
+    # Current Unix timestamp with nanosecond precision.
+    unix_nanoseconds = time.time_ns()
 
-    # NTP transmit timestamp: bytes 40-47
-    request[40:48] = struct.pack("!Q", token)
+    unix_seconds, nanoseconds = divmod(
+        unix_nanoseconds,
+        NANOSECONDS_PER_SECOND
+    )
+
+    # Convert Unix seconds to NTP seconds.
+    ntp_seconds = (
+        unix_seconds + NTP_EPOCH_OFFSET
+    ) & 0xFFFFFFFF
+
+    # Convert nanoseconds to a 32-bit NTP fraction.
+    ntp_fraction = (
+        nanoseconds * (1 << 32)
+    ) // NANOSECONDS_PER_SECOND
+
+    # NTP transmit timestamp occupies bytes 40-47.
+    request[40:48] = struct.pack(
+        "!II",
+        ntp_seconds,
+        ntp_fraction
+    )
 
     return bytes(request)
 
@@ -92,7 +229,7 @@ def validate_ntp_response(response, request):
     """
     Validate an NTPv4 server response against the request.
 
-    Check the server mode, version, synchronization state,
+    Check server mode, version, synchronization state,
     stratum and echoed originate timestamp.
     """
     if len(request) != 48 or len(response) < 48:
@@ -176,7 +313,10 @@ def is_valid_udp_response(port, response):
         if len(response) < 12:
             return False
 
-        flags = struct.unpack("!H", response[2:4])[0]
+        flags = struct.unpack(
+            "!H", response[2:4]
+        )[0]
+
         return bool(flags & 0x8000)
 
     if port == 123:
