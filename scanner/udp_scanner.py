@@ -1,5 +1,5 @@
 
-"""UDP scanning with request-aware validation and progress tracking."""
+"""UDP scanning with retries, validation and progress tracking."""
 
 import errno
 import socket
@@ -15,94 +15,100 @@ from scanner.udp_probes import (
 from utils.progress import ScanProgress
 
 
-def scan_udp_port(ip, port, timeout=0.5):
-    """
-    Scan a single UDP port.
+def _validate_retries(retries):
+    if (
+        not isinstance(retries, int)
+        or isinstance(retries, bool)
+        or not 0 <= retries <= 5
+    ):
+        raise ValueError(
+            "UDP retries must be an integer between 0 and 5."
+        )
 
-    States:
-    - open: A response passed protocol validation.
-    - closed: Connection refused or port unreachable.
-    - open|filtered: Timeout or invalid response.
-    - error: Other socket/network errors.
+
+def scan_udp_port(ip, port, timeout=0.5, retries=0):
+    """
+    Scan a UDP port with optional timeout retries.
+
+    retries=0 means one attempt.
+    retries=2 means up to three attempts.
+
+    Only socket timeouts trigger another attempt.
     """
 
     if not isinstance(port, int) or isinstance(port, bool):
         raise ValueError("Port must be an integer.")
 
     if not 1 <= port <= 65535:
-        raise ValueError(
-            "Port must be between 1 and 65535."
-        )
+        raise ValueError("Port must be between 1 and 65535.")
 
     if timeout <= 0:
-        raise ValueError(
-            "Timeout must be greater than 0."
-        )
+        raise ValueError("Timeout must be greater than 0.")
 
-    try:
-        with socket.socket(
-            socket.AF_INET,
-            socket.SOCK_DGRAM
-        ) as sock:
+    _validate_retries(retries)
 
-            sock.settimeout(timeout)
-            sock.connect((str(ip), port))
+    for attempt in range(retries + 1):
+        try:
+            with socket.socket(
+                socket.AF_INET,
+                socket.SOCK_DGRAM
+            ) as sock:
 
-            # Generate the appropriate request.
-            probe = build_udp_probe(port)
+                sock.settimeout(timeout)
+                sock.connect((str(ip), port))
 
-            # Send the original request.
-            sock.send(probe)
+                # A fresh protocol-aware probe for each attempt.
+                probe = build_udp_probe(port)
+                sock.send(probe)
 
-            # Receive the server response.
-            response = sock.recv(4096)
+                response = sock.recv(4096)
 
-            # DNS request-response correlation.
-            if port == 53:
-                valid = validate_dns_response(
-                    response,
-                    probe
-                )
+                if port == 53:
+                    valid = validate_dns_response(
+                        response,
+                        probe
+                    )
 
-            # NTP request-response correlation.
-            elif port == 123:
-                valid = validate_ntp_response(
-                    response,
-                    probe
-                )
+                elif port == 123:
+                    valid = validate_ntp_response(
+                        response,
+                        probe
+                    )
 
-            # Generic UDP validation.
-            else:
-                valid = is_valid_udp_response(
-                    port,
-                    response
-                )
+                else:
+                    valid = is_valid_udp_response(
+                        port,
+                        response
+                    )
 
-            if valid:
-                return "open"
+                if valid:
+                    return "open"
 
-            return "open|filtered"
+                # Invalid responses do not trigger retries.
+                return "open|filtered"
 
-    except socket.timeout:
-        return "open|filtered"
+        except socket.timeout:
+            # The loop creates a fresh socket on retry.
+            if attempt == retries:
+                return "open|filtered"
 
-    except OSError as error:
-        error_code = getattr(
-            error,
-            "winerror",
-            None
-        )
+        except OSError as error:
+            error_code = getattr(
+                error, "winerror", None
+            )
 
-        if error_code is None:
-            error_code = error.errno
+            if error_code is None:
+                error_code = error.errno
 
-        if error_code in (
-            errno.ECONNREFUSED,
-            10054  # Windows WSAECONNRESET
-        ):
-            return "closed"
+            if error_code in (
+                errno.ECONNREFUSED,
+                10054  # Windows WSAECONNRESET
+            ):
+                return "closed"
 
-        return "error"
+            return "error"
+
+    return "open|filtered"
 
 
 def scan_udp_ports(
@@ -113,10 +119,13 @@ def scan_udp_ports(
     threads=50,
     timeout=0.5,
     progress=None,
-    on_progress=None
+    on_progress=None,
+    retries=0
 ):
     """
-    Concurrent UDP scanning with optional progress tracking.
+    Concurrent UDP scanning with retries and progress tracking.
+
+    Progress counts completed ports, not individual attempts.
     """
 
     if threads < 1:
@@ -128,6 +137,8 @@ def scan_udp_ports(
         raise ValueError(
             "Timeout must be greater than 0."
         )
+
+    _validate_retries(retries)
 
     if ports is not None:
         target_ports = sorted(set(ports))
@@ -176,22 +187,37 @@ def scan_udp_ports(
 
     print(
         f"\n[*] Starting UDP scan on {ip} "
-        f"({total_ports} ports)..."
+        f"({total_ports} ports, {retries} retries)..."
     )
 
     with ThreadPoolExecutor(
         max_workers=threads
     ) as executor:
 
-        futures = {
-            executor.submit(
-                scan_udp_port,
-                ip,
-                port,
-                timeout
-            ): port
-            for port in target_ports
-        }
+        # Preserve the original 3-argument call when retries
+        # are disabled, keeping existing integrations compatible.
+        if retries == 0:
+            futures = {
+                executor.submit(
+                    scan_udp_port,
+                    ip,
+                    port,
+                    timeout
+                ): port
+                for port in target_ports
+            }
+
+        else:
+            futures = {
+                executor.submit(
+                    scan_udp_port,
+                    ip,
+                    port,
+                    timeout,
+                    retries=retries
+                ): port
+                for port in target_ports
+            }
 
         for future in as_completed(futures):
             port = futures[future]

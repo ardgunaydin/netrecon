@@ -213,6 +213,16 @@ def main():
     )
 
     parser.add_argument(
+        "--udp-retries",
+        type=int,
+        default=0,
+        help=(
+            "Number of additional UDP timeout retries "
+            "(0-5, default: 0)"
+        )
+    )
+
+    parser.add_argument(
         "--resolve-hostnames",
         action="store_true",
         help=(
@@ -256,6 +266,12 @@ def main():
         print(
             "[!] Banner timeout must be "
             "between 0 and 60 seconds."
+        )
+        return
+
+    if not 0 <= args.udp_retries <= 5:
+        print(
+            "[!] UDP retries must be between 0 and 5."
         )
         return
 
@@ -441,7 +457,8 @@ def main():
                 threads=args.threads,
                 timeout=args.timeout,
                 progress=scan_progress,
-                on_progress=progress_reporter
+                on_progress=progress_reporter,
+                retries=args.udp_retries
             )
 
             for result in udp_results:
