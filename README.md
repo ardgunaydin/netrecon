@@ -5,17 +5,32 @@ NetRecon is a lightweight, Python-based network reconnaissance tool designed for
 
 It provides multithreaded TCP/UDP scanning, IPv4 host discovery, protocol-aware UDP probes, service fingerprinting, live progress tracking, and structured reporting.
 
+
 ## Project Status
 
 - **Application Version:** 1.3.0
-- **Current Development:** UDP Reliability Improvements
-- **Development Branch:** `feature/udp-reliability`
+- **Current Development:** Advanced Port Selection
+- **Development Branch:** `feature/advanced-port-selection`
 - **Language:** Python 3.10+
 - **Dependencies:** Python Standard Library
 
-The current development cycle focuses on improving UDP protocol validation, standards-compatible NTP requests, and configurable retry behavior.
+The current development cycle introduces flexible TCP/UDP port selection, mixed port ranges, automatic duplicate removal, and configurable port exclusions.
+
 
 ## Features
+
+
+### Advanced Port Selection
+- Single-port selection
+- Comma-separated port lists
+- Inclusive port ranges
+- Mixed individual ports and ranges
+- Automatic duplicate removal and sorting
+- Port exclusion using `--exclude-ports`
+- TCP and UDP compatibility
+- Accurate progress tracking for selected ports
+- Backward compatibility with existing port range syntax
+
 
 ### Network Discovery
 - IPv4 address and CIDR network support
@@ -132,6 +147,50 @@ python --version
 No additional runtime packages are required.
 
 ## Usage
+
+
+### Advanced Port Selection
+
+Scan a single TCP port:
+
+```bash
+python netrecon.py -t 127.0.0.1/32 -p 443 --skip-discovery
+```
+
+Scan multiple TCP ports:
+
+```bash
+python netrecon.py -t 127.0.0.1/32 -p 22,80,443 --skip-discovery
+```
+
+Combine individual ports and ranges:
+
+```bash
+python netrecon.py -t 127.0.0.1/32 -p 22,80,443,8000-8010 --skip-discovery
+```
+
+Exclude specific ports:
+
+```bash
+python netrecon.py -t 127.0.0.1/32 -p 1-1000 --exclude-ports 135,445 --skip-discovery
+```
+
+Exclude a range of ports:
+
+```bash
+python netrecon.py -t 127.0.0.1/32 -p 8000-8010 --exclude-ports 8003-8006 --skip-discovery
+```
+
+Use exclusions with UDP:
+
+```bash
+python netrecon.py -t 127.0.0.1/32 --udp -p 53,123,161 --exclude-ports 123 --skip-discovery
+```
+
+Port specifications are validated before scanning. Duplicate ports are automatically removed, and the remaining ports are sorted.
+
+If every selected port is excluded, NetRecon stops with an informative error.
+
 
 ### Basic TCP Scan
 
@@ -385,6 +444,10 @@ GitHub Actions is configured to run tests across Python 3.10, 3.11, 3.12, and 3.
 - [x] Standards-compatible NTP timestamps
 - [x] NTP request-response correlation
 - [x] Configurable UDP timeout retries
+- [x] Advanced port specification parser
+- [x] Comma-separated and mixed port selection
+- [x] TCP/UDP port exclusion support
+- [x] Advanced port selection CLI integration tests
 
 ### Planned
 
