@@ -3,6 +3,7 @@ import ipaddress
 import socket
 import time
 from utils.html_report import save_html_report
+from scanner.port_parser import parse_port_spec
 
 from utils.progress import ScanProgress
 from utils.progress_display import ProgressReporter
@@ -126,8 +127,8 @@ def main():
         "-p",
         "--ports",
         help=(
-            "TCP/UDP port range "
-            "(example: 1-1000)"
+            "Ports and ranges "
+            "(example: 22,80,443,8000-8010)"
         )
     )
 
@@ -223,6 +224,14 @@ def main():
     )
 
     parser.add_argument(
+        "--exclude-ports",
+        help=(
+            "Exclude ports or ranges from scanning "
+            "(example: 135,445,8000-8010)"
+        )
+    )
+
+    parser.add_argument(
         "--resolve-hostnames",
         action="store_true",
         help=(
@@ -275,6 +284,8 @@ def main():
         )
         return
 
+
+
     # ==================================================
     # PORT MODE
     # ==================================================
@@ -285,33 +296,94 @@ def main():
 
     if args.top_ports:
         selected_ports = (
-                get_top_udp_ports(args.top_ports)
-                if args.udp
-                else get_top_ports(args.top_ports)
-)
+            get_top_udp_ports(args.top_ports)
+            if args.udp
+            else get_top_ports(args.top_ports)
+        )
 
         scan_mode = "top_ports"
-
         port_description = (
             f"Top {args.top_ports} common ports"
         )
 
     else:
-        port_range = parse_port_range(
-            args.ports or "1-1024"
-        )
+        port_spec = args.ports or "1-1024"
 
-        if port_range is None:
+        try:
+            parsed_ports = parse_port_spec(port_spec)
+        except ValueError as error:
+            print(
+                f"[!] Invalid port specification: {error}"
+            )
             return
 
-        start_port, end_port = (
-            port_range
+        if (
+            "-" in port_spec
+            and "," not in port_spec
+            and len(port_spec.split("-")) == 2
+        ):
+            start_port = parsed_ports[0]
+            end_port = parsed_ports[-1]
+            scan_mode = "range"
+            port_description = f"{start_port}-{end_port}"
+
+        else:
+            selected_ports = parsed_ports
+            scan_mode = "custom_ports"
+            port_description = (
+                f"{len(selected_ports)} selected ports "
+                f"({port_spec})"
+            )
+
+    # ==================================================
+    # EXCLUDED PORTS
+    # ==================================================
+
+    if args.exclude_ports:
+        try:
+            excluded_ports = set(
+                parse_port_spec(args.exclude_ports)
+            )
+        except ValueError as error:
+            print(
+                f"[!] Invalid excluded ports: {error}"
+            )
+            return
+
+        # Convert range mode into an explicit port list
+        # so that exclusions can be applied consistently.
+        if selected_ports is None:
+            selected_ports = list(
+                range(start_port, end_port + 1)
+            )
+
+        original_count = len(selected_ports)
+
+        selected_ports = [
+            port
+            for port in selected_ports
+            if port not in excluded_ports
+        ]
+
+        removed_count = (
+            original_count - len(selected_ports)
         )
 
-        scan_mode = "range"
+        if not selected_ports:
+            print(
+                "[!] No ports remain after exclusions."
+            )
+            return
+
+        # Explicit selection reflects the actual ports
+        # sent to the scanner and exported in reports.
+        start_port = None
+        end_port = None
+        scan_mode = "custom_ports"
 
         port_description = (
-            f"{start_port}-{end_port}"
+            f"{len(selected_ports)} selected ports "
+            f"({removed_count} excluded)"
         )
 
     # ==================================================
