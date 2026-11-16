@@ -3,6 +3,7 @@ import ipaddress
 import socket
 import time
 from utils.html_report import save_html_report
+from scanner.port_parser import parse_port_spec
 
 from utils.progress import ScanProgress
 from utils.progress_display import ProgressReporter
@@ -126,8 +127,8 @@ def main():
         "-p",
         "--ports",
         help=(
-            "TCP/UDP port range "
-            "(example: 1-1000)"
+            "Ports and ranges "
+            "(example: 22,80,443,8000-8010)"
         )
     )
 
@@ -275,6 +276,7 @@ def main():
         )
         return
 
+
     # ==================================================
     # PORT MODE
     # ==================================================
@@ -285,10 +287,10 @@ def main():
 
     if args.top_ports:
         selected_ports = (
-                get_top_udp_ports(args.top_ports)
-                if args.udp
-                else get_top_ports(args.top_ports)
-)
+            get_top_udp_ports(args.top_ports)
+            if args.udp
+            else get_top_ports(args.top_ports)
+        )
 
         scan_mode = "top_ports"
 
@@ -297,22 +299,37 @@ def main():
         )
 
     else:
-        port_range = parse_port_range(
-            args.ports or "1-1024"
-        )
+        port_spec = args.ports or "1-1024"
 
-        if port_range is None:
+        try:
+            parsed_ports = parse_port_spec(port_spec)
+
+        except ValueError as error:
+            print(f"[!] Invalid port specification: {error}")
             return
 
-        start_port, end_port = (
-            port_range
-        )
+        # Preserve legacy range mode for a simple
+        # continuous range such as 1-1024.
+        if (
+            "-" in port_spec
+            and "," not in port_spec
+            and len(port_spec.split("-")) == 2
+        ):
+            start_port = parsed_ports[0]
+            end_port = parsed_ports[-1]
 
-        scan_mode = "range"
+            scan_mode = "range"
+            port_description = f"{start_port}-{end_port}"
 
-        port_description = (
-            f"{start_port}-{end_port}"
-        )
+        else:
+            selected_ports = parsed_ports
+
+            scan_mode = "custom_ports"
+
+            port_description = (
+                f"{len(selected_ports)} selected ports "
+                f"({port_spec})"
+            )
 
     # ==================================================
     # START INFORMATION
