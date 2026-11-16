@@ -224,6 +224,14 @@ def main():
     )
 
     parser.add_argument(
+        "--exclude-ports",
+        help=(
+            "Exclude ports or ranges from scanning "
+            "(example: 135,445,8000-8010)"
+        )
+    )
+
+    parser.add_argument(
         "--resolve-hostnames",
         action="store_true",
         help=(
@@ -277,6 +285,7 @@ def main():
         return
 
 
+
     # ==================================================
     # PORT MODE
     # ==================================================
@@ -293,7 +302,6 @@ def main():
         )
 
         scan_mode = "top_ports"
-
         port_description = (
             f"Top {args.top_ports} common ports"
         )
@@ -303,13 +311,12 @@ def main():
 
         try:
             parsed_ports = parse_port_spec(port_spec)
-
         except ValueError as error:
-            print(f"[!] Invalid port specification: {error}")
+            print(
+                f"[!] Invalid port specification: {error}"
+            )
             return
 
-        # Preserve legacy range mode for a simple
-        # continuous range such as 1-1024.
         if (
             "-" in port_spec
             and "," not in port_spec
@@ -317,19 +324,67 @@ def main():
         ):
             start_port = parsed_ports[0]
             end_port = parsed_ports[-1]
-
             scan_mode = "range"
             port_description = f"{start_port}-{end_port}"
 
         else:
             selected_ports = parsed_ports
-
             scan_mode = "custom_ports"
-
             port_description = (
                 f"{len(selected_ports)} selected ports "
                 f"({port_spec})"
             )
+
+    # ==================================================
+    # EXCLUDED PORTS
+    # ==================================================
+
+    if args.exclude_ports:
+        try:
+            excluded_ports = set(
+                parse_port_spec(args.exclude_ports)
+            )
+        except ValueError as error:
+            print(
+                f"[!] Invalid excluded ports: {error}"
+            )
+            return
+
+        # Convert range mode into an explicit port list
+        # so that exclusions can be applied consistently.
+        if selected_ports is None:
+            selected_ports = list(
+                range(start_port, end_port + 1)
+            )
+
+        original_count = len(selected_ports)
+
+        selected_ports = [
+            port
+            for port in selected_ports
+            if port not in excluded_ports
+        ]
+
+        removed_count = (
+            original_count - len(selected_ports)
+        )
+
+        if not selected_ports:
+            print(
+                "[!] No ports remain after exclusions."
+            )
+            return
+
+        # Explicit selection reflects the actual ports
+        # sent to the scanner and exported in reports.
+        start_port = None
+        end_port = None
+        scan_mode = "custom_ports"
+
+        port_description = (
+            f"{len(selected_ports)} selected ports "
+            f"({removed_count} excluded)"
+        )
 
     # ==================================================
     # START INFORMATION
